@@ -36,6 +36,8 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      repositories:
+        enabled: false
 
   mail:
     host: ${MAIL_HOST:localhost}
