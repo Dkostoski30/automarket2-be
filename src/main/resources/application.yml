@@ -3,7 +3,7 @@ spring:
     name: automarket-backend
 
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5433/automarket}
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/automarket}
     username: ${DB_USERNAME:automarket}
     password: ${DB_PASSWORD:secret}
     hikari:
@@ -56,7 +56,8 @@ automarket:
     refresh-token-expiry-ms: 2592000000  # 30 days
 
   cors:
-    allowed-origins: ${FRONTEND_URL:http://localhost:4200}
+    allowed-origins:
+      - ${FRONTEND_URL:http://localhost:4200}
 
   storage:
     provider: ${STORAGE_PROVIDER:local}
@@ -81,6 +82,11 @@ automarket:
     ai-recommendations: false
     price-estimation: false
     stripe-payments: ${STRIPE_ENABLED:false}
+
+  stripe:
+    secret-key: ${STRIPE_SECRET_KEY:}
+    webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+    price-id-premium: ${STRIPE_PRICE_PREMIUM:}
 
 # Actuator
 management:
