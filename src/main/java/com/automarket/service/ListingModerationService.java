@@ -52,6 +52,12 @@ public class ListingModerationService {
         log.info("Listing {} rejected by {} — reason: {}", listingId, moderatorEmail, reason);
     }
 
+    @Transactional(readOnly = true)
+    public ListingDetailDto getPendingById(UUID id) {
+        Listing listing = getListingOrThrow(id);
+        return listingService.toDetailDtoPublic(listing);
+    }
+
     private Listing getListingOrThrow(UUID id) {
         return listingRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Listing", id));

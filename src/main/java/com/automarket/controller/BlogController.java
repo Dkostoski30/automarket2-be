@@ -9,10 +9,14 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -35,6 +39,12 @@ public class BlogController {
     @Operation(summary = "Get a blog post by ID")
     public BlogDto getById(@PathVariable UUID id) {
         return blogService.getById(id);
+    }
+
+    @GetMapping("/slug/{slug}")
+    @Operation(summary = "Get a blog post by slug")
+    public BlogDto getBySlug(@PathVariable String slug) {
+        return blogService.getBySlug(slug);
     }
 
     @PostMapping
@@ -62,5 +72,26 @@ public class BlogController {
     @Operation(summary = "Delete a blog post")
     public void delete(@PathVariable UUID id) {
         blogService.delete(id);
+    }
+
+    @PostMapping("/{id}/cover-image")
+    @SecurityRequirement(name = "bearerAuth")
+    @PreAuthorize("hasAnyRole('MODERATOR', 'ADMIN')")
+    @Operation(summary = "Upload a cover image for a blog post")
+    public ResponseEntity<BlogDto> uploadCoverImage(
+            @PathVariable UUID id,
+            @RequestParam("file") MultipartFile file) {
+        BlogDto updated = blogService.uploadCoverImage(id, file);
+        return ResponseEntity.ok(updated);
+    }
+
+    @PostMapping("/images")
+    @SecurityRequirement(name = "bearerAuth")
+    @PreAuthorize("hasAnyRole('MODERATOR', 'ADMIN')")
+    @Operation(summary = "Upload an inline content image for blog posts")
+    public ResponseEntity<Map<String, String>> uploadContentImage(
+            @RequestParam("file") MultipartFile file) {
+        String url = blogService.uploadContentImage(file);
+        return ResponseEntity.ok(Map.of("url", url));
     }
 }

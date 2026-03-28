@@ -34,6 +34,12 @@ public class ModerationController {
         return moderationService.getPendingListings(page, size);
     }
 
+    @GetMapping("/listings/{id}")
+    @Operation(summary = "Get a pending listing by ID")
+    public ListingDetailDto getPendingById(@PathVariable UUID id) {
+        return moderationService.getPendingById(id);
+    }
+
     @PostMapping("/listings/{id}/approve")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Approve a listing")

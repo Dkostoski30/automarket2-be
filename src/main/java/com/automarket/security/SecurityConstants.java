@@ -15,6 +15,7 @@ public final class SecurityConstants {
             "/api/v1/reference/**",
             "/api/v1/blog",
             "/api/v1/blog/{id}",
+            "/api/v1/blog/slug/{slug}",
             "/api/v1/users/{id}",
             "/api/v1/webhooks/**",
             "/api/v1/subscriptions/plans",

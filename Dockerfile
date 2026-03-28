@@ -18,6 +18,10 @@ WORKDIR /app
 
 # Add non-root user for security
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
+# Create uploads directory owned by appuser so the volume mount is writable
+RUN mkdir -p /app/uploads && chown -R appuser:appgroup /app/uploads
+
 USER appuser
 
 # Copy layers for optimal Docker cache usage

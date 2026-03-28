@@ -1,5 +1,6 @@
 package com.automarket.service;
 
+import com.automarket.dto.blog.BlogAuthorDto;
 import com.automarket.dto.blog.BlogDto;
 import com.automarket.dto.blog.BlogRequest;
 import com.automarket.dto.shared.PageResponse;
@@ -13,8 +14,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.text.Normalizer;
+import java.util.Locale;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Service
@@ -23,6 +28,10 @@ public class BlogService {
 
     private final BlogRepository blogRepository;
     private final UserRepository userRepository;
+    private final StorageService storageService;
+
+    private static final Pattern NON_LATIN = Pattern.compile("[^\\w-]");
+    private static final Pattern WHITESPACE = Pattern.compile("[\\s]+");
 
     @Transactional(readOnly = true)
     public PageResponse<BlogDto> list(int page, int size) {
@@ -38,6 +47,12 @@ public class BlogService {
                 .orElseThrow(() -> new ResourceNotFoundException("Blog", id)));
     }
 
+    @Transactional(readOnly = true)
+    public BlogDto getBySlug(String slug) {
+        return toDto(blogRepository.findBySlug(slug)
+                .orElseThrow(() -> new ResourceNotFoundException("Blog", slug)));
+    }
+
     @Transactional
     public BlogDto create(BlogRequest request, String authorEmail) {
         User author = userRepository.findByEmail(authorEmail)
@@ -45,8 +60,11 @@ public class BlogService {
 
         Blog blog = Blog.builder()
                 .title(request.title())
+                .slug(generateUniqueSlug(request.title()))
+                .excerpt(request.excerpt())
                 .content(request.content())
-                .imageUrl(request.imageUrl())
+                .coverImageUrl(request.coverImageUrl())
+                .published(request.published() != null ? request.published() : false)
                 .author(author)
                 .build();
 
@@ -61,23 +79,94 @@ public class BlogService {
                 .orElseThrow(() -> new ResourceNotFoundException("Blog", id));
 
         blog.setTitle(request.title());
+        blog.setSlug(generateUniqueSlug(request.title(), blog.getSlug()));
+        blog.setExcerpt(request.excerpt());
         blog.setContent(request.content());
-        blog.setImageUrl(request.imageUrl());
+        if (request.coverImageUrl() != null) {
+            blog.setCoverImageUrl(request.coverImageUrl());
+        }
+        if (request.published() != null) {
+            blog.setPublished(request.published());
+        }
         return toDto(blogRepository.save(blog));
     }
 
     @Transactional
     public void delete(UUID id) {
-        if (!blogRepository.existsById(id)) throw new ResourceNotFoundException("Blog", id);
-        blogRepository.deleteById(id);
+        Blog blog = blogRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Blog", id));
+
+        if (blog.getCoverImageKey() != null) {
+            storageService.delete(blog.getCoverImageKey());
+        }
+
+        blogRepository.delete(blog);
         log.info("Blog deleted: {}", id);
     }
 
+    @Transactional
+    public BlogDto uploadCoverImage(UUID id, MultipartFile file) {
+        Blog blog = blogRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Blog", id));
+
+        if (blog.getCoverImageKey() != null) {
+            storageService.delete(blog.getCoverImageKey());
+        }
+
+        StorageService.UploadResult result = storageService.store(file, "blog/covers/" + id);
+        blog.setCoverImageUrl(result.url());
+        blog.setCoverImageKey(result.storageKey());
+
+        return toDto(blogRepository.save(blog));
+    }
+
+    public String uploadContentImage(MultipartFile file) {
+        StorageService.UploadResult result = storageService.store(file, "blog/content");
+        return result.url();
+    }
+
     private BlogDto toDto(Blog b) {
+        BlogAuthorDto authorDto = b.getAuthor() != null
+                ? new BlogAuthorDto(b.getAuthor().getId(), b.getAuthor().getName())
+                : null;
+
         return new BlogDto(
-                b.getId(), b.getTitle(), b.getContent(), b.getImageUrl(),
-                b.getAuthor() != null ? b.getAuthor().getName() : null,
-                b.getCreatedAt()
+                b.getId(),
+                b.getTitle(),
+                b.getSlug(),
+                b.getExcerpt(),
+                b.getContent(),
+                b.getCoverImageUrl(),
+                authorDto,
+                b.getPublished(),
+                b.getCreatedAt(),
+                b.getUpdatedAt()
         );
+    }
+
+    private String generateUniqueSlug(String title) {
+        return generateUniqueSlug(title, null);
+    }
+
+    private String generateUniqueSlug(String title, String currentSlug) {
+        String base = toSlug(title);
+        String slug = base;
+
+        if (slug.equals(currentSlug)) {
+            return currentSlug;
+        }
+
+        int counter = 1;
+        while (blogRepository.existsBySlug(slug)) {
+            slug = base + "-" + counter++;
+        }
+        return slug;
+    }
+
+    private String toSlug(String input) {
+        String normalized = Normalizer.normalize(input, Normalizer.Form.NFD);
+        String slug = WHITESPACE.matcher(normalized).replaceAll("-");
+        slug = NON_LATIN.matcher(slug).replaceAll("");
+        return slug.toLowerCase(Locale.ENGLISH).replaceAll("-{2,}", "-").replaceAll("^-|-$", "");
     }
 }
