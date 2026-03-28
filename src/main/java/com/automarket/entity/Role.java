@@ -19,12 +19,13 @@ public class Role {
     private UUID id;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, unique = true, length = 20)
+    @Column(nullable = false, unique = true, length = 30)
     private RoleName name;
 
     public enum RoleName {
         ROLE_USER,
         ROLE_MODERATOR,
-        ROLE_ADMIN
+        ROLE_ADMIN,
+        ROLE_SUPERADMIN
     }
 }

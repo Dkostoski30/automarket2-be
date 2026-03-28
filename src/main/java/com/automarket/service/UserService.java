@@ -1,6 +1,5 @@
 package com.automarket.service;
 
-import com.automarket.dto.shared.PageResponse;
 import com.automarket.dto.user.*;
 import com.automarket.entity.*;
 import com.automarket.exception.BusinessRuleException;
@@ -8,12 +7,10 @@ import com.automarket.exception.ResourceNotFoundException;
 import com.automarket.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -65,28 +62,6 @@ public class UserService {
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         userRepository.save(user);
         log.info("Password changed for user: {}", email);
-    }
-
-    @Transactional(readOnly = true)
-    public PageResponse<UserDto> listAll(int page, int size) {
-        return PageResponse.from(userRepository.findAllActive(PageRequest.of(page, size)), this::toDto);
-    }
-
-    @Transactional
-    public UserDto updateRoles(UUID userId, Set<String> roleNames) {
-        User user = getUserOrThrow(userId);
-        // Role management would fetch Role entities by name and assign
-        // Simplified: just log for now — full implementation requires RoleRepository
-        log.info("Roles updated for user {}: {}", userId, roleNames);
-        return toDto(userRepository.save(user));
-    }
-
-    @Transactional
-    public void deleteUser(UUID userId) {
-        User user = getUserOrThrow(userId);
-        user.setDeletedAt(Instant.now());
-        userRepository.save(user);
-        log.info("User soft-deleted: {}", userId);
     }
 
     private User getUserOrThrow(UUID id) {

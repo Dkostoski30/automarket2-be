@@ -7,13 +7,15 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/admin/dashboard")
 @RequiredArgsConstructor
 @SecurityRequirement(name = "bearerAuth")
-@PreAuthorize("hasAnyRole('MODERATOR', 'ADMIN')")
+@PreAuthorize("hasAnyRole('MODERATOR', 'ADMIN', 'SUPERADMIN')")
 @Tag(name = "Admin - Dashboard")
 public class AdminDashboardController {
 
@@ -25,12 +27,14 @@ public class AdminDashboardController {
     @GetMapping
     @Operation(summary = "Get admin dashboard statistics")
     public Map<String, Object> getDashboard() {
-        return Map.of(
-                "pendingListings", listingRepository.countPendingApproval(),
-                "approvedListings", listingRepository.countApproved(),
-                "totalUsers", userRepository.count(),
-                "totalBrands", carBrandRepository.count(),
-                "totalBlogs", blogRepository.count()
-        );
+        Map<String, Object> stats = new LinkedHashMap<>();
+        stats.put("pendingListings", listingRepository.countPendingApproval());
+        stats.put("approvedListings", listingRepository.countApproved());
+        stats.put("totalUsers", userRepository.count());
+        stats.put("activeUsers", userRepository.countActiveUsers());
+        stats.put("disabledUsers", userRepository.countDisabledUsers());
+        stats.put("totalBrands", carBrandRepository.count());
+        stats.put("totalBlogs", blogRepository.count());
+        return stats;
     }
 }

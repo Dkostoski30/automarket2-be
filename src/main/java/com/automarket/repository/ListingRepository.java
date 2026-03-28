@@ -34,4 +34,10 @@ public interface ListingRepository extends JpaRepository<Listing, UUID>, JpaSpec
 
     @Query("SELECT COUNT(l) FROM Listing l WHERE l.approved = true AND l.deletedAt IS NULL")
     long countApproved();
+
+    @Query("SELECT COUNT(l) FROM Listing l WHERE l.seller.id = :userId AND l.deletedAt IS NULL")
+    int countTotalByUserId(java.util.UUID userId);
+
+    @Query("SELECT COUNT(l) FROM Listing l WHERE l.seller.id = :userId AND l.approved = true AND l.deletedAt IS NULL")
+    int countActiveByUserId(java.util.UUID userId);
 }

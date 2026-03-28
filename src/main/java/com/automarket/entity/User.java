@@ -52,6 +52,10 @@ public class User extends AuditableEntity {
     @Builder.Default
     private Set<Role> roles = new HashSet<>();
 
+    @Column(nullable = false)
+    @Builder.Default
+    private boolean enabled = true;
+
     @Column(name = "deleted_at")
     private Instant deletedAt;
 

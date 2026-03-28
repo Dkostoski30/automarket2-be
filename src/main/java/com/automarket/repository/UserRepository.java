@@ -21,4 +21,10 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query("SELECT u FROM User u WHERE u.deletedAt IS NULL AND " +
            "(LOWER(u.name) LIKE LOWER(CONCAT('%', :query, '%')) OR LOWER(u.email) LIKE LOWER(CONCAT('%', :query, '%')))")
     Page<User> searchActive(String query, Pageable pageable);
+
+    @Query("SELECT COUNT(u) FROM User u WHERE u.deletedAt IS NULL AND u.enabled = true")
+    long countActiveUsers();
+
+    @Query("SELECT COUNT(u) FROM User u WHERE u.deletedAt IS NULL AND u.enabled = false")
+    long countDisabledUsers();
 }
