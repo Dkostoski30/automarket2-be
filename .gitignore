@@ -1,0 +1,29 @@
+# Ignore environment and secret files
+# Local environment files
+.env
+*.env
+.env.*
+.env.local
+.env.*.local
+.envrc
+.local.env
+
+# Common secret/key formats
+.secrets
+*.secrets
+*.key
+*.pem
+*.p12
+*.jks
+*.keystore
+
+# Ignore IDE-specific local settings that may contain credentials
+.vscode/
+.idea/**/workspace.xml
+.idea/**/tasks.xml
+
+# Optional: ignore uploads and build artifacts
+# Uncomment if you want to ignore these directories
+# /uploads/
+# /target/
+
