@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find 'C:\\\\Users\\\\kosto\\\\IdeaSnapshots\\\\AutoMarket2 BE\\\\src\\\\main\\\\java' -type f -name *Listing* -o -name *Car* -o -name *Vehicle*)",
+      "Bash(find 'C:\\\\Users\\\\kosto\\\\IdeaSnapshots\\\\AutoMarket2 BE' -name application*.properties -o -name application*.yml)",
+      "Bash(python:*)"
+    ]
+  }
+}
