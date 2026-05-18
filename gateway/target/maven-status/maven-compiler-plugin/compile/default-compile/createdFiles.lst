@@ -1,0 +1,2 @@
+com\automarket\gateway\filter\JwtValidationFilter.class
+com\automarket\gateway\GatewayApplication.class

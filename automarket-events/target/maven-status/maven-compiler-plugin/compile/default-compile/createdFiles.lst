@@ -1,0 +1,16 @@
+com\automarket\events\InquiryEvent$Sent.class
+com\automarket\events\UserEvent.class
+com\automarket\events\RabbitConfig.class
+com\automarket\events\ListingEvent$Created.class
+com\automarket\events\SubscriptionEvent$Cancelled.class
+com\automarket\events\ListingEvent$Approved.class
+com\automarket\events\ListingEvent$Rejected.class
+com\automarket\events\UserEvent$Registered.class
+com\automarket\events\UserEvent$Deleted.class
+com\automarket\events\SubscriptionEvent.class
+com\automarket\events\UserEvent$Disabled.class
+com\automarket\events\InquiryEvent.class
+com\automarket\events\UserEvent$PlanChanged.class
+com\automarket\events\SubscriptionEvent$Activated.class
+com\automarket\events\EventEnvelope.class
+com\automarket\events\ListingEvent.class

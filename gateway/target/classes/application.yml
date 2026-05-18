@@ -1,0 +1,144 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: automarket-gateway
+
+  config:
+    import: "optional:file:.env[.properties]"
+
+  cloud:
+    gateway:
+      # All routes now point to extracted microservices — monolith decommissioned.
+      routes:
+        # Static file uploads (served by listing-service)
+        - id: uploads
+          uri: ${LISTING_SERVICE_URL:http://listing-service:8082}
+          predicates:
+            - Path=/uploads/**
+
+        # Auth & user management → auth-service
+        - id: auth
+          uri: ${AUTH_SERVICE_URL:http://auth-service:8081}
+          predicates:
+            - Path=/api/v1/auth/**
+
+        - id: users
+          uri: ${AUTH_SERVICE_URL:http://auth-service:8081}
+          predicates:
+            - Path=/api/v1/users/**
+
+        # Admin reference → reference-service (must be before generic admin route)
+        - id: admin-reference
+          uri: ${REFERENCE_SERVICE_URL:http://reference-service:8085}
+          predicates:
+            - Path=/api/v1/admin/reference/**
+
+        # Admin users → auth-service (must be before generic admin route)
+        - id: admin-users
+          uri: ${AUTH_SERVICE_URL:http://auth-service:8081}
+          predicates:
+            - Path=/api/v1/admin/users/**
+
+        # Admin dashboard → listing-service
+        - id: admin-dashboard
+          uri: ${LISTING_SERVICE_URL:http://listing-service:8082}
+          predicates:
+            - Path=/api/v1/admin/dashboard/**
+
+        # Moderation → listing-service
+        - id: moderation
+          uri: ${LISTING_SERVICE_URL:http://listing-service:8082}
+          predicates:
+            - Path=/api/v1/moderation/**
+
+        # Listings & favorites → listing-service
+        - id: listings
+          uri: ${LISTING_SERVICE_URL:http://listing-service:8082}
+          predicates:
+            - Path=/api/v1/listings/**
+
+        - id: favorites
+          uri: ${LISTING_SERVICE_URL:http://listing-service:8082}
+          predicates:
+            - Path=/api/v1/favorites/**
+
+        # Blog → blog-service
+        - id: blog
+          uri: ${BLOG_SERVICE_URL:http://blog-service:8083}
+          predicates:
+            - Path=/api/v1/blog/**
+
+        # Inquiries → inquiry-service
+        - id: inquiries
+          uri: ${INQUIRY_SERVICE_URL:http://inquiry-service:8084}
+          predicates:
+            - Path=/api/v1/inquiries/**
+
+        # Reference data → reference-service
+        - id: reference
+          uri: ${REFERENCE_SERVICE_URL:http://reference-service:8085}
+          predicates:
+            - Path=/api/v1/reference/**
+
+        # Payments & webhooks → payment-service
+        - id: subscriptions
+          uri: ${PAYMENT_SERVICE_URL:http://payment-service:8086}
+          predicates:
+            - Path=/api/v1/subscriptions/**
+
+        - id: webhooks
+          uri: ${PAYMENT_SERVICE_URL:http://payment-service:8086}
+          predicates:
+            - Path=/api/v1/webhooks/**
+
+      # Global default filters
+      default-filters:
+        - name: AddRequestHeader
+          args:
+            name: X-Gateway-Version
+            value: "1.0"
+
+      # CORS — centralized at gateway level (no longer in individual services)
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins: "${FRONTEND_URL:http://localhost:4200}"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - PATCH
+              - OPTIONS
+            allowedHeaders: "*"
+            allowCredentials: true
+            maxAge: 3600
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+# JWT secret — must match auth-service
+automarket:
+  jwt:
+    secret: ${JWT_SECRET:change-this-secret-in-production-must-be-at-least-32-chars}
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway
+  endpoint:
+    health:
+      show-details: always
+    gateway:
+      enabled: true
+
+logging:
+  level:
+    com.automarket.gateway: DEBUG
+    org.springframework.cloud.gateway: INFO

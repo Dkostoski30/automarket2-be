@@ -1,0 +1,3 @@
+com\automarket\notification\service\EmailNotificationService.class
+com\automarket\notification\NotificationServiceApplication.class
+com\automarket\notification\consumer\NotificationEventConsumer.class

@@ -36,6 +36,26 @@ services:
       retries: 5
 
   # ──────────────────────────────────────────
+  # RabbitMQ (event bus for microservices)
+  # Management UI → http://localhost:15672 (guest/guest)
+  # ──────────────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: automarket
+      RABBITMQ_DEFAULT_PASS: secret
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # Management UI
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # ──────────────────────────────────────────
   # MailHog (dev SMTP + web UI)
   # ──────────────────────────────────────────
   mailhog:
@@ -46,17 +66,39 @@ services:
       - "8025:8025"   # Web UI → http://localhost:8025
 
   # ──────────────────────────────────────────
-  # AutoMarket Spring Boot application
+  # Auth Service (port 8081)
+  # Owns: users, roles, refresh_tokens, JWT, auth
   # ──────────────────────────────────────────
-  app:
+  auth-service:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: auth-service/Dockerfile
     restart: unless-stopped
     env_file:
       - .env
     ports:
-      - "8080:8080"
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  # ──────────────────────────────────────────
+  # Listing Service (port 8082)
+  # Owns: listings, images, favorites, analytics, moderation
+  # ──────────────────────────────────────────
+  listing-service:
+    build:
+      context: .
+      dockerfile: listing-service/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8082:8082"
     volumes:
       - uploads_data:/app/uploads
     depends_on:
@@ -64,8 +106,136 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  # ──────────────────────────────────────────
+  # Blog Service (port 8083)
+  # ──────────────────────────────────────────
+  blog-service:
+    build:
+      context: .
+      dockerfile: blog-service/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8083:8083"
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ──────────────────────────────────────────
+  # Inquiry Service (port 8084)
+  # Owns: inquiries
+  # ──────────────────────────────────────────
+  inquiry-service:
+    build:
+      context: .
+      dockerfile: inquiry-service/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8084:8084"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  # ──────────────────────────────────────────
+  # Reference Service (port 8085)
+  # ──────────────────────────────────────────
+  reference-service:
+    build:
+      context: .
+      dockerfile: reference-service/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8085:8085"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ──────────────────────────────────────────
+  # Payment Service (port 8086)
+  # Owns: subscriptions, Stripe integration
+  # ──────────────────────────────────────────
+  payment-service:
+    build:
+      context: .
+      dockerfile: payment-service/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8086:8086"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  # ──────────────────────────────────────────
+  # Notification Service (port 8087)
+  # No DB. Pure event consumer via RabbitMQ.
+  # ──────────────────────────────────────────
+  notification-service:
+    build:
+      context: .
+      dockerfile: notification-service/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8087:8087"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
       mailhog:
         condition: service_started
+
+  # ──────────────────────────────────────────
+  # API Gateway (port 8080 — FE entry point, unchanged)
+  # ──────────────────────────────────────────
+  gateway:
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:8081
+      LISTING_SERVICE_URL: http://listing-service:8082
+      BLOG_SERVICE_URL: http://blog-service:8083
+      INQUIRY_SERVICE_URL: http://inquiry-service:8084
+      REFERENCE_SERVICE_URL: http://reference-service:8085
+      PAYMENT_SERVICE_URL: http://payment-service:8086
+    ports:
+      - "8080:8080"
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      listing-service:
+        condition: service_healthy
+      blog-service:
+        condition: service_healthy
+      inquiry-service:
+        condition: service_healthy
+      reference-service:
+        condition: service_healthy
+      payment-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
 volumes:
   postgres_data:

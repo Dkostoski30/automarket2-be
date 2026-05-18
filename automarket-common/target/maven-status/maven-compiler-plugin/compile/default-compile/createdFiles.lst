@@ -1,0 +1,8 @@
+com\automarket\common\dto\PageResponse.class
+com\automarket\common\entity\AuditableEntity.class
+com\automarket\common\dto\ApiError.class
+com\automarket\common\exception\ResourceNotFoundException.class
+com\automarket\common\exception\BusinessRuleException.class
+com\automarket\common\exception\GlobalExceptionHandler.class
+com\automarket\common\dto\ApiError$FieldError.class
+com\automarket\common\exception\StorageException.class
