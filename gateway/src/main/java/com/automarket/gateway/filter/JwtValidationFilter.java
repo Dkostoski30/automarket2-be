@@ -10,6 +10,7 @@ import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.stereotype.Component;
@@ -74,7 +75,9 @@ public class JwtValidationFilter implements GlobalFilter, Ordered {
                 })
                 .build();
 
-        if (isPublic(path)) {
+        HttpMethod method = exchange.getRequest().getMethod();
+
+        if (isPublic(path, method)) {
             return chain.filter(exchange.mutate().request(cleanRequest).build());
         }
 
@@ -126,12 +129,12 @@ public class JwtValidationFilter implements GlobalFilter, Ordered {
         }
     }
 
-    private boolean isPublic(String path) {
-        if (PUBLIC_EXACT.contains(path)) return true;
+    private boolean isPublic(String path, HttpMethod method) {
+        if (PUBLIC_EXACT.contains(path) && method == HttpMethod.GET) return true;
         // GET /api/v1/listings/{id} and /api/v1/listings/slug/{slug} are public
-        if (path.startsWith("/api/v1/listings/") && !path.contains("/favorite") && !path.contains("/images") && !path.contains("/analytics") && !path.equals("/api/v1/listings/my")) return true;
-        if (path.startsWith("/api/v1/blog/") && !path.contains("/images") && !path.contains("/cover-image")) return true;
-        if (path.startsWith("/api/v1/users/") && !path.equals("/api/v1/users/me")) return true;
+        if (method == HttpMethod.GET && path.startsWith("/api/v1/listings/") && !path.contains("/favorite") && !path.contains("/images") && !path.contains("/analytics") && !path.equals("/api/v1/listings/my")) return true;
+        if (method == HttpMethod.GET && path.startsWith("/api/v1/blog/") && !path.contains("/images") && !path.contains("/cover-image")) return true;
+        if (method == HttpMethod.GET && path.startsWith("/api/v1/users/") && !path.equals("/api/v1/users/me")) return true;
         return PUBLIC_PREFIXES.stream().anyMatch(path::startsWith);
     }
 

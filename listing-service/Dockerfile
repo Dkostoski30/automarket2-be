@@ -44,7 +44,7 @@ COPY --from=build /app/listing-service/target/extracted/application/ ./
 
 EXPOSE 8082
 
-HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
   CMD wget -qO- http://localhost:8082/actuator/health || exit 1
 
 ENTRYPOINT ["java", \

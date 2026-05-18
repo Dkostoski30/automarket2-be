@@ -38,7 +38,9 @@
       "Read(//c/Users/kosto/IdeaSnapshots/AutoMarket2 BE/$dir/**)",
       "Bash(done)",
       "Bash(JAVA_HOME=\"/c/Users/kosto/.jdks/ms-21.0.10\" \"/c/Users/kosto/.m2/wrapper/dists/apache-maven-3.9.12-bin/5nmfsn99br87k5d4ajlekdq10k/apache-maven-3.9.12/bin/mvn\" compile -pl listing-service -am -B)",
-      "Bash(JAVA_HOME=\"/c/Users/kosto/.jdks/ms-21.0.10\" \"/c/Users/kosto/.m2/wrapper/dists/apache-maven-3.9.12-bin/5nmfsn99br87k5d4ajlekdq10k/apache-maven-3.9.12/bin/mvn\" clean compile -B)"
+      "Bash(JAVA_HOME=\"/c/Users/kosto/.jdks/ms-21.0.10\" \"/c/Users/kosto/.m2/wrapper/dists/apache-maven-3.9.12-bin/5nmfsn99br87k5d4ajlekdq10k/apache-maven-3.9.12/bin/mvn\" clean compile -B)",
+      "Bash(docker compose:*)",
+      "Bash(JAVA_HOME=\"/c/Users/kosto/.jdks/ms-21.0.10\" \"/c/Users/kosto/.m2/wrapper/dists/apache-maven-3.9.12-bin/5nmfsn99br87k5d4ajlekdq10k/apache-maven-3.9.12/bin/mvn\" compile -pl automarket-storage -am -B)"
     ]
   }
 }

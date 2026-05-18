@@ -1,6 +1,7 @@
-com\automarket\storage\LocalStorageService.class
-com\automarket\storage\S3StorageService.class
 com\automarket\storage\StorageService$UploadResult.class
-com\automarket\storage\StorageWebConfig.class
 com\automarket\storage\S3ClientConfig.class
 com\automarket\storage\StorageService.class
+com\automarket\storage\LocalStorageService.class
+com\automarket\storage\S3StorageService.class
+com\automarket\storage\StorageWebConfig.class
+com\automarket\storage\StorageAutoConfiguration.class
