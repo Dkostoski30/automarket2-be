@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: automarket
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+    spec:
+      containers:
+        - name: gateway
+          image: automarket/automarket-gateway:latest
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: automarket-config
+            - secretRef:
+                name: automarket-secret
+          env:
+            - name: AUTH_SERVICE_URL
+              value: "http://auth-service:8081"
+            - name: LISTING_SERVICE_URL
+              value: "http://listing-service:8082"
+            - name: BLOG_SERVICE_URL
+              value: "http://blog-service:8083"
+            - name: INQUIRY_SERVICE_URL
+              value: "http://inquiry-service:8084"
+            - name: REFERENCE_SERVICE_URL
+              value: "http://reference-service:8085"
+            - name: PAYMENT_SERVICE_URL
+              value: "http://payment-service:8086"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"

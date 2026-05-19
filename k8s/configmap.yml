@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: automarket-config
+  namespace: automarket
+data:
+  DB_URL: "jdbc:postgresql://postgres:5432/automarket"
+  DB_USERNAME: "automarket"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  RABBITMQ_HOST: "rabbitmq"
+  RABBITMQ_PORT: "5672"
+  RABBITMQ_USERNAME: "automarket"
+  MAIL_HOST: "mailhog"
+  MAIL_PORT: "1025"
+  MAIL_USERNAME: ""
+  MAIL_PASSWORD: ""
+  MAIL_FROM: "noreply@automarket.com"
+  FRONTEND_URL: "http://automarket.local"
+  STORAGE_PROVIDER: "local"
+  LOCAL_UPLOAD_DIR: "/app/uploads"
+  LOCAL_BASE_URL: "http://automarket.local/uploads"
+  STRIPE_ENABLED: "false"
+  AUTH_SERVICE_URL: "http://auth-service:8081"
+  LISTING_SERVICE_URL: "http://listing-service:8082"
+  BLOG_SERVICE_URL: "http://blog-service:8083"
+  INQUIRY_SERVICE_URL: "http://inquiry-service:8084"
+  REFERENCE_SERVICE_URL: "http://reference-service:8085"
+  PAYMENT_SERVICE_URL: "http://payment-service:8086"
