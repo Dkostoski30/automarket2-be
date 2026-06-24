@@ -27,24 +27,28 @@ spec:
           volumeMounts:
             - name: uploads
               mountPath: /app/uploads
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8083
+            failureThreshold: 30
+            periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /actuator/health
               port: 8083
-            initialDelaySeconds: 30
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /actuator/health
               port: 8083
-            initialDelaySeconds: 60
             periodSeconds: 10
           resources:
             requests:
-              memory: "128Mi"
-              cpu: "50m"
+              memory: "256Mi"
+              cpu: "100m"
             limits:
-              memory: "200Mi"
+              memory: "512Mi"
       volumes:
         - name: uploads
           persistentVolumeClaim:

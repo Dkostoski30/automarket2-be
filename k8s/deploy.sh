@@ -25,6 +25,14 @@ else
     --servers 1
 fi
 
+# Fix kubeconfig: on Windows, host.docker.internal may not resolve — use 127.0.0.1
+CURRENT_SERVER=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}' 2>/dev/null || true)
+if echo "$CURRENT_SERVER" | grep -q "host.docker.internal"; then
+  FIXED_SERVER=$(echo "$CURRENT_SERVER" | sed 's|host.docker.internal|127.0.0.1|')
+  echo "Fixing kubeconfig: $CURRENT_SERVER -> $FIXED_SERVER"
+  kubectl config set-cluster "k3d-${CLUSTER_NAME}" --server="$FIXED_SERVER"
+fi
+
 # Install nginx ingress controller (lightweight, matches existing manifests)
 echo "Installing nginx ingress controller..."
 kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.1/deploy/static/provider/cloud/deploy.yaml 2>/dev/null || true
@@ -126,18 +134,7 @@ kubectl apply -f "$SCRIPT_DIR/services/frontend-service.yml"
 echo "Applying ingress..."
 kubectl apply -f "$SCRIPT_DIR/ingress.yml"
 
-# ── 7. Install Argo CD ─────────────────────────────────────────
-echo "Installing Argo CD..."
-kubectl apply -f "$SCRIPT_DIR/argocd/install.yml"
-kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml 2>/dev/null || true
-echo "Waiting for Argo CD server to be ready..."
-kubectl -n argocd wait --for=condition=available deployment/argocd-server --timeout=300s
-
-# Apply Argo CD Application
-echo "Creating Argo CD Application..."
-kubectl apply -f "$SCRIPT_DIR/argocd/application.yml"
-
-# ── 8. Print status ────────────────────────────────────────────
+# ── 7. Print status ───────────────────────────────────────────
 echo ""
 echo "=== Deployment complete ==="
 echo ""
@@ -161,13 +158,6 @@ echo "Monitoring (run in separate terminals):"
 echo "  kubectl -n automarket port-forward svc/prometheus 9090:9090"
 echo "  kubectl -n automarket port-forward svc/grafana 3000:3000"
 echo "  Grafana: http://localhost:3000 (admin/admin)"
-echo ""
-echo "Argo CD UI:"
-ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d 2>/dev/null || echo "<not yet ready>")
-echo "  Run: kubectl port-forward svc/argocd-server -n argocd 9090:443"
-echo "  Open: https://localhost:9090"
-echo "  Username: admin"
-echo "  Password: $ARGOCD_PASSWORD"
 echo ""
 echo "Cleanup: k3d cluster delete $CLUSTER_NAME"
 echo ""
