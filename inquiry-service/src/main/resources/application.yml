@@ -10,9 +10,12 @@ spring:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/automarket}
     username: ${DB_USERNAME:automarket}
     password: ${DB_PASSWORD:secret}
+    hikari:
+      maximum-pool-size: 3
+      minimum-idle: 1
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: update
     show-sql: false
     properties:
       hibernate:
@@ -29,7 +32,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus
   endpoint:
     health:
       show-details: always

@@ -21,28 +21,19 @@
         <module name="automarket-security-common" />
         <module name="auth-service" />
         <module name="automarket-events" />
-        <module name="reference-service" />
         <module name="payment-service" />
         <module name="automarket-gateway" />
         <module name="automarket-storage" />
         <module name="inquiry-service" />
         <module name="automarket-common" />
         <module name="blog-service" />
-        <module name="notification-service" />
-      </profile>
-      <profile name="Annotation profile for listing-service" enabled="true">
-        <sourceOutputDir name="target/generated-sources/annotations" />
-        <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
-        <outputRelativeToContentRoot value="true" />
-        <processorPath useClasspath="false">
-          <entry name="$MAVEN_REPOSITORY$/org/projectlombok/lombok/1.18.30/lombok-1.18.30.jar" />
-          <entry name="$MAVEN_REPOSITORY$/org/mapstruct/mapstruct-processor/1.5.5.Final/mapstruct-processor-1.5.5.Final.jar" />
-        </processorPath>
         <module name="listing-service" />
+        <module name="notification-service" />
       </profile>
     </annotationProcessing>
     <bytecodeTargetLevel>
       <module name="automarket-backend (1)" target="21" />
+      <module name="reference-service" target="21" />
     </bytecodeTargetLevel>
   </component>
   <component name="JavacSettings">

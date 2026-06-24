@@ -16,6 +16,7 @@ spec:
       containers:
         - name: auth-service
           image: automarket/automarket-auth-service:latest
+          imagePullPolicy: Never
           ports:
             - containerPort: 8081
           envFrom:
@@ -37,8 +38,7 @@ spec:
             periodSeconds: 10
           resources:
             requests:
-              memory: "256Mi"
-              cpu: "100m"
+              memory: "128Mi"
+              cpu: "50m"
             limits:
-              memory: "512Mi"
-              cpu: "500m"
+              memory: "256Mi"

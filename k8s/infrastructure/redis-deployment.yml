@@ -16,22 +16,24 @@ spec:
       containers:
         - name: redis
           image: redis:7-alpine
+          args: ["--maxmemory", "32mb", "--maxmemory-policy", "allkeys-lru"]
           ports:
             - containerPort: 6379
           readinessProbe:
             exec:
               command: ["redis-cli", "ping"]
-            initialDelaySeconds: 5
-            periodSeconds: 10
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 10
           livenessProbe:
             exec:
               command: ["redis-cli", "ping"]
-            initialDelaySeconds: 15
-            periodSeconds: 10
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 10
           resources:
             requests:
-              memory: "128Mi"
-              cpu: "50m"
+              memory: "24Mi"
+              cpu: "25m"
             limits:
-              memory: "256Mi"
-              cpu: "250m"
+              memory: "48Mi"

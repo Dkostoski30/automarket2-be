@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: automarket
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Dkostoski30/automarket2-be
+    targetRevision: feature/devops-setup
+    path: k8s
+    directory:
+      recurse: true
+      exclude: "{argocd/*,deploy.sh}"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: automarket
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

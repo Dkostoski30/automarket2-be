@@ -206,7 +206,13 @@ k8s/
 │   ├── rabbitmq-deployment.yml
 │   ├── rabbitmq-service.yml
 │   ├── mailhog-deployment.yml
-│   └── mailhog-service.yml
+│   ├── mailhog-service.yml
+│   ├── prometheus-configmap.yml            # Scrape config for Spring Boot services
+│   ├── prometheus-deployment.yml
+│   ├── prometheus-service.yml
+│   ├── grafana-datasources.yml             # Auto-provision Prometheus datasource
+│   ├── grafana-deployment.yml
+│   └── grafana-service.yml
 ├── services/
 │   ├── uploads-pvc.yml                    # Shared PVC for file uploads
 │   ├── frontend-deployment.yml
@@ -228,7 +234,10 @@ k8s/
 │   ├── notification-service-deployment.yml
 │   └── notification-service-service.yml
 ├── ingress.yml                            # Nginx Ingress for automarket.local
-└── deploy.sh                              # Deployment script
+├── deploy.sh                              # Deployment script
+└── argocd/
+    ├── install.yml                        # Argo CD namespace
+    └── application.yml                    # Argo CD Application (GitOps)
 ```
 
 ### 6.1 ConfigMap & Secret
@@ -299,24 +308,79 @@ spec:
 
 Annotation `proxy-body-size: 50m` for file uploads.
 
-### 6.5 Deployment Script
+### 6.5 Argo CD (Continuous Deployment)
 
-`k8s/deploy.sh` automates the full deployment:
+Argo CD provides GitOps-based continuous deployment. When manifests in the `k8s/` directory are updated in Git, Argo CD automatically syncs the changes to the cluster.
 
-1. Starts Minikube if not running (`--memory=8192 --cpus=4`)
-2. Enables the ingress addon
-3. Applies manifests in order: namespace → config/secrets → infrastructure → waits for infra readiness → application services → ingress
-4. Prints the Minikube IP and instructions to update `/etc/hosts`
+**How it works:**
+1. The deploy script installs Argo CD on the Minikube cluster
+2. An `Application` resource points to the `k8s/` directory in the GitHub repo
+3. Argo CD watches for changes and auto-syncs with `prune` and `selfHeal` enabled
 
-## 7. Deploying to Minikube
+**Application manifest** (`k8s/argocd/application.yml`):
+- Source: `https://github.com/Dkostoski30/automarket2-be.git` (branch: `feature/microservice-migration`, path: `k8s/`)
+- Destination: `automarket` namespace on the local cluster
+- Sync policy: automated with pruning and self-healing
+- Excludes: `argocd/*` and `deploy.sh` (to avoid circular management)
+
+**Accessing the Argo CD UI:**
+```bash
+kubectl port-forward svc/argocd-server -n argocd 9090:443
+# Open https://localhost:9090
+# Username: admin
+# Password: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+```
+
+### 6.6 Deployment Script
+
+`k8s/deploy.sh` automates the full deployment using **k3d** (k3s-in-Docker):
+
+1. Creates a k3d cluster with port 80/443 mapped to localhost
+2. Installs the nginx ingress controller
+3. Builds Docker images locally and imports them into the k3d cluster
+4. Applies manifests in order: namespace → config/secrets → infrastructure → waits for infra readiness → application services → ingress
+5. Installs Argo CD and creates the Application resource for GitOps
+6. Prints hosts file instructions and Argo CD credentials
+
+### 6.7 Monitoring (Prometheus + Grafana)
+
+Prometheus scrapes metrics from all Spring Boot services via their `/actuator/prometheus` endpoint. Grafana provides dashboards with Prometheus as a pre-configured datasource.
+
+**Prometheus** (`prom/prometheus:v2.53.0`):
+- ConfigMap `prometheus-config` defines scrape targets for all 8 backend services
+- Scrapes every 10 seconds from `/actuator/prometheus`
+- 7-day data retention
+- Accessible inside the cluster at `prometheus:9090`
+
+**Grafana** (`grafana/grafana:11.1.0`):
+- Auto-provisions Prometheus as default datasource via `grafana-datasources` ConfigMap
+- Default credentials: `admin` / `admin`
+- Accessible inside the cluster at `grafana:3000`
+
+**Accessing the UIs:**
+```bash
+# Prometheus
+kubectl -n automarket port-forward svc/prometheus 9090:9090
+# Open http://localhost:9090
+
+# Grafana
+kubectl -n automarket port-forward svc/grafana 3000:3000
+# Open http://localhost:3000 (admin/admin)
+```
+
+> **Note**: For the Spring Boot services to expose Prometheus metrics, they need the `micrometer-registry-prometheus` dependency and `management.endpoints.web.exposure.include=prometheus` in their configuration.
+
+## 7. Deploying with k3d
+
+**Prerequisites:** Docker Desktop and [k3d](https://k3d.io/) installed.
 
 ```bash
 # Run the deployment script
 bash k8s/deploy.sh
 
-# Add to hosts file (use the IP printed by the script)
-echo "<minikube-ip> automarket.local" >> /etc/hosts
+# Add to hosts file
 # On Windows: add to C:\Windows\System32\drivers\etc\hosts
+# 127.0.0.1 automarket.local
 
 # Verify everything is running
 kubectl -n automarket get pods
@@ -325,7 +389,14 @@ kubectl -n automarket get ingress
 
 # Access the application
 # Frontend: http://automarket.local
-# API:      http://automarket.local/api/v1/references/brands
+# API:      http://automarket.local/api/v1/reference/car-brands
+
+# Monitoring (run in separate terminals)
+kubectl -n automarket port-forward svc/prometheus 9090:9090
+kubectl -n automarket port-forward svc/grafana 3000:3000
+
+# Cleanup when done
+k3d cluster delete automarket
 ```
 
 ### Expected Output
@@ -340,9 +411,10 @@ auth-service-xxxxx                      1/1     Running   0
 listing-service-xxxxx                   1/1     Running   0
 blog-service-xxxxx                      1/1     Running   0
 inquiry-service-xxxxx                   1/1     Running   0
-reference-service-xxxxx                 1/1     Running   0
 payment-service-xxxxx                   1/1     Running   0
 notification-service-xxxxx              1/1     Running   0
 gateway-xxxxx                           1/1     Running   0
 frontend-xxxxx                          1/1     Running   0
+prometheus-xxxxx                        1/1     Running   0
+grafana-xxxxx                           1/1     Running   0
 ```

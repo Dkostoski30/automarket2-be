@@ -25,5 +25,4 @@ data:
   LISTING_SERVICE_URL: "http://listing-service:8082"
   BLOG_SERVICE_URL: "http://blog-service:8083"
   INQUIRY_SERVICE_URL: "http://inquiry-service:8084"
-  REFERENCE_SERVICE_URL: "http://reference-service:8085"
   PAYMENT_SERVICE_URL: "http://payment-service:8086"

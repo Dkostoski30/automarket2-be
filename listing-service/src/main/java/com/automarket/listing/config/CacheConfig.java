@@ -27,6 +27,7 @@ public class CacheConfig implements CachingConfigurer {
 
     public static final String CACHE_FEATURED_LISTINGS = "featured-listings";
     public static final String CACHE_LISTING_DETAIL = "listing-detail";
+    public static final String CACHE_REFERENCE_DATA = "reference-data";
 
     @Bean
     public RedisCacheManager cacheManager(RedisConnectionFactory connectionFactory) {
@@ -51,7 +52,8 @@ public class CacheConfig implements CachingConfigurer {
 
         Map<String, RedisCacheConfiguration> cacheConfigurations = Map.of(
                 CACHE_FEATURED_LISTINGS, defaultConfig.entryTtl(Duration.ofMinutes(5)),
-                CACHE_LISTING_DETAIL, defaultConfig.entryTtl(Duration.ofMinutes(10))
+                CACHE_LISTING_DETAIL, defaultConfig.entryTtl(Duration.ofMinutes(10)),
+                CACHE_REFERENCE_DATA, defaultConfig.entryTtl(Duration.ofHours(1))
         );
 
         return RedisCacheManager.builder(connectionFactory)

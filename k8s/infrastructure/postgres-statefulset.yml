@@ -28,26 +28,30 @@ spec:
                 secretKeyRef:
                   name: automarket-secret
                   key: DB_PASSWORD
+          args: ["-c", "shared_buffers=64MB", "-c", "effective_cache_size=128MB", "-c", "work_mem=4MB"]
           volumeMounts:
             - name: postgres-data
               mountPath: /var/lib/postgresql/data
           readinessProbe:
             exec:
               command: ["pg_isready", "-U", "automarket", "-d", "automarket"]
-            initialDelaySeconds: 10
+            initialDelaySeconds: 15
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
           livenessProbe:
             exec:
               command: ["pg_isready", "-U", "automarket", "-d", "automarket"]
-            initialDelaySeconds: 30
-            periodSeconds: 10
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 6
           resources:
             requests:
-              memory: "256Mi"
-              cpu: "100m"
+              memory: "128Mi"
+              cpu: "50m"
             limits:
-              memory: "512Mi"
-              cpu: "500m"
+              memory: "256Mi"
   volumeClaimTemplates:
     - metadata:
         name: postgres-data

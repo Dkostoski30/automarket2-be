@@ -35,6 +35,8 @@ public class SecurityConfig {
                                 "/api/v1/listings/slug/{slug}",
                                 "/api/v1/listings/{id}"
                         ).permitAll()
+                        // Public reference data endpoints
+                        .requestMatchers(HttpMethod.GET, "/api/v1/reference/**").permitAll()
                         // Static uploads
                         .requestMatchers("/uploads/**").permitAll()
                         // Internal service-to-service endpoints

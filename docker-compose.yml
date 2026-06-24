@@ -6,6 +6,7 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    mem_limit: 256m
     environment:
       POSTGRES_DB: automarket
       POSTGRES_USER: automarket
@@ -27,6 +28,8 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    mem_limit: 48m
+    command: ["redis-server", "--maxmemory", "32mb", "--maxmemory-policy", "allkeys-lru"]
     ports:
       - "6379:6379"
     healthcheck:
@@ -42,9 +45,11 @@ services:
   rabbitmq:
     image: rabbitmq:3-management-alpine
     restart: unless-stopped
+    mem_limit: 200m
     environment:
       RABBITMQ_DEFAULT_USER: automarket
       RABBITMQ_DEFAULT_PASS: secret
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbit vm_memory_high_watermark 0.5"
     ports:
       - "5672:5672"    # AMQP
       - "15672:15672"  # Management UI
@@ -61,9 +66,51 @@ services:
   mailhog:
     image: mailhog/mailhog:latest
     restart: unless-stopped
+    mem_limit: 32m
     ports:
       - "1025:1025"   # SMTP
       - "8025:8025"   # Web UI → http://localhost:8025
+
+  # ──────────────────────────────────────────
+  # Prometheus (metrics scraping) — optional
+  # Start with: docker compose --profile monitoring up
+  # UI → http://localhost:9090
+  # ──────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    restart: unless-stopped
+    mem_limit: 96m
+    profiles: ["monitoring"]
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+      - "--storage.tsdb.retention.size=256MB"
+
+  # ──────────────────────────────────────────
+  # Grafana (dashboards) — optional
+  # Start with: docker compose --profile monitoring up
+  # UI → http://localhost:3000 (admin/admin)
+  # ──────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.1.0
+    restart: unless-stopped
+    mem_limit: 96m
+    profiles: ["monitoring"]
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
 
   # ──────────────────────────────────────────
   # Auth Service (port 8081)
@@ -74,6 +121,7 @@ services:
       context: .
       dockerfile: auth-service/Dockerfile
     restart: unless-stopped
+    mem_limit: 256m
     env_file:
       - .env
     ports:
@@ -88,13 +136,14 @@ services:
 
   # ──────────────────────────────────────────
   # Listing Service (port 8082)
-  # Owns: listings, images, favorites, analytics, moderation
+  # Owns: listings, images, favorites, analytics, moderation, reference data
   # ──────────────────────────────────────────
   listing-service:
     build:
       context: .
       dockerfile: listing-service/Dockerfile
     restart: unless-stopped
+    mem_limit: 300m
     env_file:
       - .env
     ports:
@@ -117,6 +166,7 @@ services:
       context: .
       dockerfile: blog-service/Dockerfile
     restart: unless-stopped
+    mem_limit: 200m
     env_file:
       - .env
     ports:
@@ -136,6 +186,7 @@ services:
       context: .
       dockerfile: inquiry-service/Dockerfile
     restart: unless-stopped
+    mem_limit: 210m
     env_file:
       - .env
     ports:
@@ -147,24 +198,6 @@ services:
         condition: service_healthy
 
   # ──────────────────────────────────────────
-  # Reference Service (port 8085)
-  # ──────────────────────────────────────────
-  reference-service:
-    build:
-      context: .
-      dockerfile: reference-service/Dockerfile
-    restart: unless-stopped
-    env_file:
-      - .env
-    ports:
-      - "8085:8085"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
-  # ──────────────────────────────────────────
   # Payment Service (port 8086)
   # Owns: subscriptions, Stripe integration
   # ──────────────────────────────────────────
@@ -173,6 +206,7 @@ services:
       context: .
       dockerfile: payment-service/Dockerfile
     restart: unless-stopped
+    mem_limit: 220m
     env_file:
       - .env
     ports:
@@ -192,6 +226,7 @@ services:
       context: .
       dockerfile: notification-service/Dockerfile
     restart: unless-stopped
+    mem_limit: 160m
     env_file:
       - .env
     ports:
@@ -203,13 +238,14 @@ services:
         condition: service_started
 
   # ──────────────────────────────────────────
-  # API Gateway (port 8080 — FE entry point, unchanged)
+  # API Gateway (port 8080 — FE entry point)
   # ──────────────────────────────────────────
   gateway:
     build:
       context: .
       dockerfile: gateway/Dockerfile
     restart: unless-stopped
+    mem_limit: 220m
     env_file:
       - .env
     environment:
@@ -217,7 +253,6 @@ services:
       LISTING_SERVICE_URL: http://listing-service:8082
       BLOG_SERVICE_URL: http://blog-service:8083
       INQUIRY_SERVICE_URL: http://inquiry-service:8084
-      REFERENCE_SERVICE_URL: http://reference-service:8085
       PAYMENT_SERVICE_URL: http://payment-service:8086
     ports:
       - "8080:8080"
@@ -230,8 +265,6 @@ services:
         condition: service_healthy
       inquiry-service:
         condition: service_healthy
-      reference-service:
-        condition: service_healthy
       payment-service:
         condition: service_healthy
       redis:
@@ -240,3 +273,5 @@ services:
 volumes:
   postgres_data:
   uploads_data:
+  prometheus_data:
+  grafana_data:

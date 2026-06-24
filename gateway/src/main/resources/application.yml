@@ -29,9 +29,9 @@ spring:
           predicates:
             - Path=/api/v1/users/**
 
-        # Admin reference → reference-service (must be before generic admin route)
+        # Admin reference → listing-service (merged)
         - id: admin-reference
-          uri: ${REFERENCE_SERVICE_URL:http://reference-service:8085}
+          uri: ${LISTING_SERVICE_URL:http://listing-service:8082}
           predicates:
             - Path=/api/v1/admin/reference/**
 
@@ -76,9 +76,9 @@ spring:
           predicates:
             - Path=/api/v1/inquiries/**
 
-        # Reference data → reference-service
+        # Reference data → listing-service (merged)
         - id: reference
-          uri: ${REFERENCE_SERVICE_URL:http://reference-service:8085}
+          uri: ${LISTING_SERVICE_URL:http://listing-service:8082}
           predicates:
             - Path=/api/v1/reference/**
 
@@ -131,7 +131,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,gateway
+        include: health,info,gateway,prometheus
   endpoint:
     health:
       show-details: always

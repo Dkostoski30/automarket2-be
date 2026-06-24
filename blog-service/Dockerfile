@@ -12,7 +12,6 @@ COPY auth-service/pom.xml ./auth-service/pom.xml
 COPY listing-service/pom.xml ./listing-service/pom.xml
 COPY blog-service/pom.xml ./blog-service/pom.xml
 COPY inquiry-service/pom.xml ./inquiry-service/pom.xml
-COPY reference-service/pom.xml ./reference-service/pom.xml
 COPY payment-service/pom.xml ./payment-service/pom.xml
 COPY notification-service/pom.xml ./notification-service/pom.xml
 
@@ -49,5 +48,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
 ENTRYPOINT ["java", \
   "-XX:+UseContainerSupport", \
   "-XX:MaxRAMPercentage=75.0", \
+  "-XX:+UseSerialGC", \
+  "-Xss256k", \
   "-Djava.security.egd=file:/dev/./urandom", \
   "org.springframework.boot.loader.launch.JarLauncher"]

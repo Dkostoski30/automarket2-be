@@ -28,7 +28,6 @@
         <module>listing-service</module>
         <module>blog-service</module>
         <module>inquiry-service</module>
-        <module>reference-service</module>
         <module>payment-service</module>
         <module>notification-service</module>
     </modules>
