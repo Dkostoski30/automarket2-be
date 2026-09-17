@@ -1,0 +1,16 @@
+# Maven
+target/
+*.jar
+*.war
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Env files — never commit real credentials
+.env
+.env.local
+
+# Kubernetes secrets — create from secret.yml.example, never commit real values
+k8s/secret.yml
