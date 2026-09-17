@@ -36,7 +36,7 @@ public class CacheConfig implements CachingConfigurer {
         objectMapper.registerModule(new JavaTimeModule());
         objectMapper.activateDefaultTyping(
                 objectMapper.getPolymorphicTypeValidator(),
-                ObjectMapper.DefaultTyping.NON_FINAL,
+                ObjectMapper.DefaultTyping.EVERYTHING,
                 JsonTypeInfo.As.WRAPPER_ARRAY
         );
 
