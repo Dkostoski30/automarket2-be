@@ -33,6 +33,13 @@
             <artifactId>spring-kafka</artifactId>
         </dependency>
 
+        <!-- Envelope payloads are written to the outbox as JSON. Not transitive:
+             this module pulls in no web/json starter. -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
         <!-- Gauges for outbox depth and staleness. Optional: a service that does
              not run actuator still compiles, the metrics just go nowhere. -->
         <dependency>
