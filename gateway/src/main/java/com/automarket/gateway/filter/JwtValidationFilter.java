@@ -26,9 +26,13 @@ import java.util.Set;
 /**
  * Global gateway filter that validates JWT tokens and forwards user identity as trusted headers.
  *
- * For Phase 0: runs but does NOT block unauthenticated requests — the monolith still
- * handles its own auth. Starting Phase 4 (auth-service extraction), downstream services
- * will rely solely on these headers for authentication.
+ * Public routes (defined in PUBLIC_PREFIXES / PUBLIC_EXACT) are forwarded without a token.
+ * All other routes require a valid, non-expired JWT — missing or invalid tokens get a 401
+ * immediately at the gateway level.
+ *
+ * On success, the validated identity is forwarded as trusted headers (X-User-Email,
+ * X-User-Roles, X-User-Id). Downstream services read these headers via GatewayAuthFilter
+ * and do not re-parse the JWT.
  *
  * Precedence: highest (Ordered.HIGHEST_PRECEDENCE) so JWT validation runs first.
  */
@@ -40,14 +44,13 @@ public class JwtValidationFilter implements GlobalFilter, Ordered {
 
     /**
      * Paths that bypass JWT validation entirely (public routes).
-     * These are forwarded to the monolith/downstream service without any token check.
+     * These are forwarded to the downstream service without any token check.
      */
     private static final Set<String> PUBLIC_PREFIXES = Set.of(
             "/api/v1/auth/",
             "/api/v1/reference/",
             "/api/v1/webhooks/",
             "/api/v1/subscriptions/plans",
-            "/actuator/",
             "/v3/api-docs",
             "/swagger-ui",
             "/uploads/"
@@ -56,7 +59,8 @@ public class JwtValidationFilter implements GlobalFilter, Ordered {
     private static final Set<String> PUBLIC_EXACT = Set.of(
             "/api/v1/listings",
             "/api/v1/blog",
-            "/swagger-ui.html"
+            "/swagger-ui.html",
+            "/actuator/health"
     );
 
     @Value("${automarket.jwt.secret}")
@@ -84,8 +88,8 @@ public class JwtValidationFilter implements GlobalFilter, Ordered {
         String authHeader = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
 
         if (!StringUtils.hasText(authHeader) || !authHeader.startsWith(BEARER_PREFIX)) {
-            // No token — forward anyway (monolith handles 401 for protected routes in Phase 0)
-            return chain.filter(exchange.mutate().request(cleanRequest).build());
+            exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+            return exchange.getResponse().setComplete();
         }
 
         String token = authHeader.substring(BEARER_PREFIX.length());
@@ -121,11 +125,8 @@ public class JwtValidationFilter implements GlobalFilter, Ordered {
 
         } catch (JwtException | IllegalArgumentException e) {
             log.warn("Invalid JWT token on {}: {}", path, e.getMessage());
-            // In Phase 0: let monolith handle the invalid token (it validates too)
-            // In Phase 4+: uncomment to reject at gateway level:
-            // exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-            // return exchange.getResponse().setComplete();
-            return chain.filter(exchange.mutate().request(cleanRequest).build());
+            exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+            return exchange.getResponse().setComplete();
         }
     }
 

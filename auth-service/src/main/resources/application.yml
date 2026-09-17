@@ -15,23 +15,49 @@ spring:
       minimum-idle: 1
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     show-sql: false
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
   flyway:
-    enabled: false
+    enabled: true
+    # Shared PostgreSQL schema: each service needs its OWN Flyway history table.
+    # With the default (flyway_schema_history) the first service to start records
+    # its V1__baseline and every other service then fails with a checksum
+    # mismatch on version 1 and never boots.
+    table: flyway_history_auth
+    baseline-on-migrate: true
+    baseline-version: 0
   data:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-  rabbitmq:
-    host: ${RABBITMQ_HOST:localhost}
-    port: ${RABBITMQ_PORT:5672}
-    username: ${RABBITMQ_USERNAME:automarket}
-    password: ${RABBITMQ_PASSWORD:secret}
-
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      # acks=all + idempotence: no silent message loss on broker failover,
+      # and retries cannot produce duplicates from the producer side.
+      acks: all
+      retries: 5
+      properties:
+        # Consumers read with StringDeserializer, so the serializer's type headers
+        # would be dead weight on every record.
+        spring.json.add.type.headers: false
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+    consumer:
+      group-id: auth-service
+      # Read from the start the first time this group appears, so subscription events
+      # published before the consumer existed are still applied.
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      enable-auto-commit: false
+    listener:
+      ack-mode: record
 automarket:
   jwt:
     secret: ${JWT_SECRET:change-this-secret-in-production-must-be-at-least-32-chars}
@@ -47,4 +73,4 @@ management:
         include: health,info,prometheus
   endpoint:
     health:
-      show-details: always
+      show-details: when-authorized

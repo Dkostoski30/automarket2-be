@@ -36,13 +36,13 @@ public class ListingService {
     private final ListingRepository listingRepository;
     private final ListingImageRepository listingImageRepository;
     private final UserViewRepository userViewRepository;
+    private final EventPublisher eventPublisher;
     private final CarBrandRepository carBrandRepository;
     private final FuelTypeRepository fuelTypeRepository;
     private final BodyTypeRepository bodyTypeRepository;
     private final ConditionTypeRepository conditionTypeRepository;
     private final TransmissionTypeRepository transmissionTypeRepository;
     private final StorageService storageService;
-    private final AnalyticsService analyticsService;
 
     @Value("${automarket.listings.max-per-free-user:3}")
     private int maxListingsPerFreeUser;
@@ -64,7 +64,6 @@ public class ListingService {
     public ListingDetailDto getById(UUID id) {
         Listing listing = listingRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Listing", id));
-        analyticsService.recordView(listing);
         return toDetailDto(listing);
     }
 
@@ -72,7 +71,6 @@ public class ListingService {
     public ListingDetailDto getBySlug(String slug) {
         Listing listing = listingRepository.findBySlug(slug)
                 .orElseThrow(() -> new ResourceNotFoundException("Listing with slug: " + slug));
-        analyticsService.recordView(listing);
         return toDetailDto(listing);
     }
 
@@ -105,6 +103,8 @@ public class ListingService {
                 .build();
 
         listingRepository.save(listing);
+        eventPublisher.publishListingCreated(
+                listing.getId(), seller.getId(), listing.getTitle(), listing.isApproved());
         log.info("Listing created: {} by {}", listing.getId(), sellerEmail);
         return toDetailDto(listing);
     }
@@ -134,6 +134,8 @@ public class ListingService {
         listing.setApproved(false);
 
         listingRepository.save(listing);
+        eventPublisher.publishListingUpdated(
+                listing.getId(), listing.getSeller().getId(), listing.getTitle(), listing.isApproved());
         log.info("Listing updated: {} by {}", id, editorEmail);
         return toDetailDto(listing);
     }
@@ -144,6 +146,7 @@ public class ListingService {
         Listing listing = getListingAndCheckOwnership(id, deleterEmail);
         listing.softDelete();
         listingRepository.save(listing);
+        eventPublisher.publishListingDeleted(listing.getId());
         log.info("Listing soft-deleted: {} by {}", id, deleterEmail);
     }
 
@@ -309,7 +312,7 @@ public class ListingService {
                 ),
                 new ListingDto.SellerSummaryDto(
                         l.getSeller().getId(), l.getSeller().getName(),
-                        l.getSeller().getCity() != null ? l.getSeller().getCity().getName() : null
+                        l.getSeller().getCityName()
                 )
         );
     }
@@ -339,7 +342,7 @@ public class ListingService {
                 ),
                 new ListingDetailDto.SellerDetailDto(
                         l.getSeller().getId(), l.getSeller().getName(), l.getSeller().getPhone(),
-                        l.getSeller().getCity() != null ? l.getSeller().getCity().getName() : null,
+                        l.getSeller().getCityName(),
                         l.getSeller().getCreatedAt()
                 ),
                 l.getConditionType() != null

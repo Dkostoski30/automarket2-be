@@ -4,7 +4,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Standard wrapper for all domain events published to RabbitMQ.
+ * Standard wrapper for all domain events published to Kafka.
  * Every event follows this shape for consistency and idempotency.
  */
 public record EventEnvelope<T>(

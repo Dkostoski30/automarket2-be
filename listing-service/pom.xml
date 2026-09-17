@@ -32,6 +32,12 @@
             <groupId>com.automarket</groupId>
             <artifactId>automarket-events</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.automarket</groupId>
+            <artifactId>automarket-messaging</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
 
         <!-- Web -->
         <dependency>
@@ -54,6 +60,10 @@
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
         </dependency>
 
         <!-- Validation -->
@@ -82,10 +92,10 @@
             <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
 
-        <!-- RabbitMQ -->
+        <!-- Kafka -->
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-amqp</artifactId>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
         </dependency>
 
         <!-- AOP -->

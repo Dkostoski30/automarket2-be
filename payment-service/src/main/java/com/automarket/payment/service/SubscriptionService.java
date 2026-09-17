@@ -32,7 +32,7 @@ import java.util.UUID;
  * Manages user subscriptions via Stripe Checkout Sessions.
  *
  * <p>DECOUPLED from User entity — stores userId as UUID, no JPA FK relationship.
- * When Stripe webhook completes, publishes subscription events via RabbitMQ
+ * When Stripe webhook completes, publishes subscription events via Kafka
  * instead of directly updating User.plan.
  *
  * <p>Required environment variables when stripe-payments is enabled:

@@ -45,13 +45,19 @@ public class ListingController {
     @GetMapping("/{id}")
     @Operation(summary = "Get listing details by ID")
     public ListingDetailDto getById(@PathVariable UUID id) {
-        return listingService.getById(id);
+        ListingDetailDto listing = listingService.getById(id);
+        // Deliberately here and not inside getById: that method is @Cacheable, so on a
+        // cache hit its body never runs and the view would go uncounted.
+        analyticsService.recordView(listing.id());
+        return listing;
     }
 
     @GetMapping("/slug/{slug}")
     @Operation(summary = "Get listing details by SEO slug")
     public ListingDetailDto getBySlug(@PathVariable String slug) {
-        return listingService.getBySlug(slug);
+        ListingDetailDto listing = listingService.getBySlug(slug);
+        analyticsService.recordView(listing.id());
+        return listing;
     }
 
     @GetMapping("/featured")

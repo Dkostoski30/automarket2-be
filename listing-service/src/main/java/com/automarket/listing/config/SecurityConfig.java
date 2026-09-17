@@ -39,8 +39,6 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/reference/**").permitAll()
                         // Static uploads
                         .requestMatchers("/uploads/**").permitAll()
-                        // Internal service-to-service endpoints
-                        .requestMatchers("/internal/**").permitAll()
                         // Actuator & docs
                         .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()

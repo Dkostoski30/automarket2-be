@@ -12,7 +12,7 @@
 
     <artifactId>notification-service</artifactId>
     <name>AutoMarket Notification Service</name>
-    <description>Event-driven notification service — consumes RabbitMQ events, sends emails</description>
+    <description>Event-driven notification service — consumes Kafka events, sends emails</description>
 
     <dependencies>
         <!-- Web (for actuator health endpoint) -->
@@ -21,10 +21,10 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
-        <!-- RabbitMQ -->
+        <!-- Kafka -->
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-amqp</artifactId>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
         </dependency>
 
         <!-- Mail -->
@@ -43,7 +43,7 @@
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
 
-        <!-- Shared event definitions + RabbitConfig -->
+        <!-- Shared event definitions + Kafka topic config -->
         <dependency>
             <groupId>com.automarket</groupId>
             <artifactId>automarket-events</artifactId>
@@ -69,8 +69,8 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>org.springframework.amqp</groupId>
-            <artifactId>spring-rabbit-test</artifactId>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka-test</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

@@ -12,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -61,8 +62,12 @@ public class BlogController {
     @SecurityRequirement(name = "bearerAuth")
     @PreAuthorize("hasAnyRole('MODERATOR', 'ADMIN')")
     @Operation(summary = "Update a blog post")
-    public BlogDto update(@PathVariable UUID id, @Valid @RequestBody BlogRequest request) {
-        return blogService.update(id, request);
+    public BlogDto update(@PathVariable UUID id, @Valid @RequestBody BlogRequest request,
+                          @AuthenticationPrincipal String email,
+                          Authentication authentication) {
+        boolean isAdmin = authentication.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+        return blogService.update(id, request, email, isAdmin);
     }
 
     @DeleteMapping("/{id}")

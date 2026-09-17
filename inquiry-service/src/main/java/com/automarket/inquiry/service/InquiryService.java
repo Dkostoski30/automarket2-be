@@ -13,11 +13,15 @@ import com.automarket.inquiry.repository.ListingViewRepository;
 import com.automarket.inquiry.repository.UserViewRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -70,17 +74,29 @@ public class InquiryService {
     @Transactional(readOnly = true)
     public PageResponse<InquiryDto> getReceived(String sellerEmail, int page, int size) {
         UserView seller = getUserOrThrow(sellerEmail);
-        return PageResponse.from(
-                inquiryRepository.findReceivedBySeller(seller.getId(), PageRequest.of(page, size)),
-                this::toDto);
+        Page<Inquiry> inquiryPage = inquiryRepository.findReceivedBySeller(seller.getId(), PageRequest.of(page, size));
+        return mapWithBatchLookup(inquiryPage);
     }
 
     @Transactional(readOnly = true)
     public PageResponse<InquiryDto> getSent(String senderEmail, int page, int size) {
         UserView sender = getUserOrThrow(senderEmail);
-        return PageResponse.from(
-                inquiryRepository.findBySenderIdOrderByCreatedAtDesc(sender.getId(), PageRequest.of(page, size)),
-                this::toDto);
+        Page<Inquiry> inquiryPage = inquiryRepository.findBySenderIdOrderByCreatedAtDesc(sender.getId(), PageRequest.of(page, size));
+        return mapWithBatchLookup(inquiryPage);
+    }
+
+    private PageResponse<InquiryDto> mapWithBatchLookup(Page<Inquiry> inquiryPage) {
+        Set<UUID> listingIds = inquiryPage.stream().map(Inquiry::getListingId).collect(Collectors.toSet());
+        Set<UUID> senderIds = inquiryPage.stream().map(Inquiry::getSenderId).collect(Collectors.toSet());
+
+        Map<UUID, String> listingTitles = listingViewRepository.findAllById(listingIds).stream()
+                .collect(Collectors.toMap(ListingView::getId, ListingView::getTitle));
+        Map<UUID, String> senderNames = userViewRepository.findAllById(senderIds).stream()
+                .collect(Collectors.toMap(UserView::getId, UserView::getName));
+
+        return PageResponse.from(inquiryPage, i -> toDto(i,
+                listingTitles.getOrDefault(i.getListingId(), "Unknown Listing"),
+                senderNames.getOrDefault(i.getSenderId(), "Unknown User")));
     }
 
     @Transactional
@@ -103,16 +119,6 @@ public class InquiryService {
     private UserView getUserOrThrow(String email) {
         return userViewRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User", email));
-    }
-
-    private InquiryDto toDto(Inquiry inquiry) {
-        String listingTitle = listingViewRepository.findById(inquiry.getListingId())
-                .map(ListingView::getTitle)
-                .orElse("Unknown Listing");
-        String senderName = userViewRepository.findById(inquiry.getSenderId())
-                .map(UserView::getName)
-                .orElse("Unknown User");
-        return toDto(inquiry, listingTitle, senderName);
     }
 
     private InquiryDto toDto(Inquiry inquiry, String listingTitle, String senderName) {

@@ -39,12 +39,14 @@ public class GatewayAuthFilter extends OncePerRequestFilter {
         String email = request.getHeader(SecurityConstants.USER_EMAIL_HEADER);
         String rolesHeader = request.getHeader(SecurityConstants.USER_ROLES_HEADER);
 
-        if (StringUtils.hasText(email) && StringUtils.hasText(rolesHeader)) {
-            List<SimpleGrantedAuthority> authorities = Arrays.stream(rolesHeader.split(","))
-                    .map(String::trim)
-                    .filter(StringUtils::hasText)
-                    .map(SimpleGrantedAuthority::new)
-                    .toList();
+        if (StringUtils.hasText(email)) {
+            List<SimpleGrantedAuthority> authorities = StringUtils.hasText(rolesHeader)
+                    ? Arrays.stream(rolesHeader.split(","))
+                        .map(String::trim)
+                        .filter(StringUtils::hasText)
+                        .map(SimpleGrantedAuthority::new)
+                        .toList()
+                    : Collections.emptyList();
 
             UsernamePasswordAuthenticationToken auth =
                     new UsernamePasswordAuthenticationToken(email, null, authorities);

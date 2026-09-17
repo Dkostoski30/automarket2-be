@@ -13,6 +13,7 @@ import com.automarket.common.exception.ResourceNotFoundException;
 import com.automarket.storage.StorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,8 +21,12 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.text.Normalizer;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -37,10 +42,14 @@ public class BlogService {
 
     @Transactional(readOnly = true)
     public PageResponse<BlogDto> list(int page, int size) {
-        return PageResponse.from(
-                blogRepository.findAllOrderByCreatedAtDesc(PageRequest.of(page, size)),
-                this::toDto
-        );
+        Page<Blog> blogPage = blogRepository.findAllOrderByCreatedAtDesc(PageRequest.of(page, size));
+        Set<UUID> authorIds = blogPage.stream()
+                .map(Blog::getAuthorId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<UUID, BlogAuthorDto> authorMap = authorRepository.findAllById(authorIds).stream()
+                .collect(Collectors.toMap(AuthorView::getId, a -> new BlogAuthorDto(a.getId(), a.getName())));
+        return PageResponse.from(blogPage, b -> toDto(b, authorMap));
     }
 
     @Transactional(readOnly = true)
@@ -76,9 +85,17 @@ public class BlogService {
     }
 
     @Transactional
-    public BlogDto update(UUID id, BlogRequest request) {
+    public BlogDto update(UUID id, BlogRequest request, String callerEmail, boolean isAdmin) {
         Blog blog = blogRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Blog", id));
+
+        if (!isAdmin) {
+            AuthorView caller = authorRepository.findByEmail(callerEmail)
+                    .orElseThrow(() -> new ResourceNotFoundException("User", callerEmail));
+            if (!blog.getAuthorId().equals(caller.getId())) {
+                throw new BusinessRuleException("You are not the author of this blog post");
+            }
+        }
 
         blog.setTitle(request.title());
         blog.setSlug(generateUniqueSlug(request.title(), blog.getSlug()));
@@ -139,7 +156,17 @@ public class BlogService {
                     .map(a -> new BlogAuthorDto(a.getId(), a.getName()))
                     .orElse(new BlogAuthorDto(b.getAuthorId(), "Unknown"));
         }
+        return toDto(b, authorDto);
+    }
 
+    private BlogDto toDto(Blog b, Map<UUID, BlogAuthorDto> authorMap) {
+        BlogAuthorDto authorDto = b.getAuthorId() != null
+                ? authorMap.getOrDefault(b.getAuthorId(), new BlogAuthorDto(b.getAuthorId(), "Unknown"))
+                : null;
+        return toDto(b, authorDto);
+    }
+
+    private BlogDto toDto(Blog b, BlogAuthorDto authorDto) {
         return new BlogDto(
                 b.getId(),
                 b.getTitle(),

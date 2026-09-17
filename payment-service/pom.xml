@@ -28,6 +28,12 @@
             <groupId>com.automarket</groupId>
             <artifactId>automarket-events</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.automarket</groupId>
+            <artifactId>automarket-messaging</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
 
         <!-- Web -->
         <dependency>
@@ -51,6 +57,10 @@
             <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
         </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
 
         <!-- Validation -->
         <dependency>
@@ -68,10 +78,10 @@
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
 
-        <!-- AMQP / RabbitMQ -->
+        <!-- Kafka -->
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-amqp</artifactId>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
         </dependency>
 
         <!-- Stripe -->

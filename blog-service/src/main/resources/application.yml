@@ -19,15 +19,32 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     show-sql: false
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
 
-  # Flyway disabled: monolith owns migrations during Phase 2 transition.
   flyway:
-    enabled: false
+    enabled: true
+    # Shared PostgreSQL schema: each service needs its OWN Flyway history table.
+    # With the default (flyway_schema_history) the first service to start records
+    # its V1__baseline and every other service then fails with a checksum
+    # mismatch on version 1 and never boots.
+    table: flyway_history_blog
+    baseline-on-migrate: true
+    baseline-version: 0
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: blog-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      enable-auto-commit: false
+    listener:
+      ack-mode: record
 
   servlet:
     multipart:
@@ -52,7 +69,7 @@ management:
         include: health,info,metrics,prometheus
   endpoint:
     health:
-      show-details: always
+      show-details: when-authorized
 
 # OpenAPI
 springdoc:

@@ -49,7 +49,7 @@ public class AuthService {
         }
 
         CityView city = null;
-        if (request.cityId() != null) {
+        if (request.cityId() != null && !request.cityId().isBlank()) {
             city = cityViewRepository.findById(UUID.fromString(request.cityId()))
                     .orElseThrow(() -> new ResourceNotFoundException("City", request.cityId()));
         }
@@ -70,7 +70,7 @@ public class AuthService {
         log.info("New user registered: {}", request.email());
 
         // Publish user.registered event
-        eventPublisher.publishUserRegistered(user.getId(), user.getEmail(), user.getName());
+        eventPublisher.publishUserRegistered(user);
 
         return buildTokenPair(user);
     }

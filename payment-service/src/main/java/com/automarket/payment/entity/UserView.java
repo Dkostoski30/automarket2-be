@@ -1,15 +1,22 @@
 package com.automarket.payment.entity;
 
 import jakarta.persistence.*;
-import lombok.*;
-import org.hibernate.annotations.Immutable;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.util.UUID;
 
+/**
+ * Local read model of a user, owned by payment-service.
+ *
+ * <p>Previously mapped onto auth-service's `users` table. It now maps onto
+ * payment_user_view, kept current by UserEventConsumer from the user-events topic.
+ */
 @Entity
-@Table(name = "users")
-@Immutable
+@Table(name = "payment_user_view")
 @Getter
+@Setter
 @NoArgsConstructor
 public class UserView {
 

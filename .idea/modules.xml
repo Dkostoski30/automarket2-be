@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/automarket-backend.iml" filepath="$PROJECT_DIR$/automarket-backend.iml" />
+      <module fileurl="file://$PROJECT_DIR$/reference-service/reference-service.iml" filepath="$PROJECT_DIR$/reference-service/reference-service.iml" />
     </modules>
   </component>
 </project>

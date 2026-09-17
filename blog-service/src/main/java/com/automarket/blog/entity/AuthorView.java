@@ -2,23 +2,25 @@ package com.automarket.blog.entity;
 
 import jakarta.persistence.*;
 import lombok.Getter;
-import org.hibernate.annotations.Immutable;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.util.UUID;
 
 /**
- * Read-only JPA view of the users table for resolving author names.
+ * Local read model of a blog author, owned by blog-service.
  *
- * Phase 2 (current): blog-service shares the same PostgreSQL instance as the monolith,
- * so we can still read from the users table directly.
+ * <p>Previously mapped onto auth-service's `users` table. It now maps onto
+ * blog_author_view, kept current by UserEventConsumer from the user-events topic.
  *
- * Phase 4+ (after auth-service extraction): replace this with an AuthServiceClient
- * Feign call to GET /internal/users/{id} with Redis caching.
+ * <p>Rows are never deleted when a user is deleted: historical posts should keep
+ * showing who wrote them.
  */
 @Entity
-@Table(name = "users")
-@Immutable
+@Table(name = "blog_author_view")
 @Getter
+@Setter
+@NoArgsConstructor
 public class AuthorView {
 
     @Id

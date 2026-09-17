@@ -12,7 +12,7 @@ import java.util.UUID;
  * The cities table is owned by reference-service; auth-service only reads it.
  */
 @Entity
-@Table(name = "cities")
+@Table(name = "auth_city_view")
 @Immutable
 @Getter
 @NoArgsConstructor

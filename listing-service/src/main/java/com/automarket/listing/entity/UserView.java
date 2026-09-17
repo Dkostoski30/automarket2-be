@@ -3,22 +3,28 @@ package com.automarket.listing.entity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.hibernate.annotations.Immutable;
+import lombok.Setter;
 
 import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Read-only JPA view of the users table for resolving seller information.
+ * Local read model of a user, owned by listing-service.
  *
- * During the shared-DB transition phase, listing-service reads directly from
- * the users table. After auth-service extraction (Phase 4+), this will be
- * replaced with Feign calls to GET /internal/users/{id} with Redis caching.
+ * <p>Previously mapped onto auth-service's `users` table. It now maps onto
+ * listing_user_view, a table this service owns, kept current by UserEventConsumer
+ * from the user-events topic.
+ *
+ * <p>The class name and getters are unchanged so callers need not care where the data
+ * comes from - only `city` changed, from an association into the shared `cities` table
+ * to a plain denormalised name carried on the event.
+ *
+ * <p>No longer @Immutable: the consumer writes it. Nothing else should.
  */
 @Entity
-@Table(name = "users")
-@Immutable
+@Table(name = "listing_user_view")
 @Getter
+@Setter
 @NoArgsConstructor
 public class UserView {
 
@@ -31,9 +37,9 @@ public class UserView {
 
     private String phone;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "city_id")
-    private CityView city;
+    /** Denormalised from the event - cities are reference data owned elsewhere. */
+    @Column(name = "city_name")
+    private String cityName;
 
     @Column(name = "created_at")
     private Instant createdAt;

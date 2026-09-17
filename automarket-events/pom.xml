@@ -12,13 +12,13 @@
 
     <artifactId>automarket-events</artifactId>
     <name>AutoMarket Events</name>
-    <description>RabbitMQ event DTOs and exchange/queue configuration shared across services</description>
+    <description>Kafka event DTOs and topic configuration shared across services</description>
 
     <dependencies>
-        <!-- RabbitMQ -->
+        <!-- Kafka -->
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-amqp</artifactId>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
         </dependency>
 
         <!-- Lombok -->

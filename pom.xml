@@ -23,6 +23,7 @@
         <module>automarket-security-common</module>
         <module>automarket-storage</module>
         <module>automarket-events</module>
+        <module>automarket-messaging</module>
         <module>gateway</module>
         <module>auth-service</module>
         <module>listing-service</module>

@@ -61,7 +61,13 @@ public class UserService {
                     .orElseThrow(() -> new ResourceNotFoundException("City", request.cityId()));
             user.setCity(city);
         }
-        return toDto(userRepository.save(user));
+        User saved = userRepository.save(user);
+
+        // Other services keep local read models of this user; without an update event
+        // their copies would keep the name, phone and city captured at registration.
+        eventPublisher.publishUserUpdated(saved);
+
+        return toDto(saved);
     }
 
     @Transactional

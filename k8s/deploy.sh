@@ -93,8 +93,8 @@ kubectl apply -f "$SCRIPT_DIR/infrastructure/postgres-statefulset.yml"
 kubectl apply -f "$SCRIPT_DIR/infrastructure/postgres-service.yml"
 kubectl apply -f "$SCRIPT_DIR/infrastructure/redis-deployment.yml"
 kubectl apply -f "$SCRIPT_DIR/infrastructure/redis-service.yml"
-kubectl apply -f "$SCRIPT_DIR/infrastructure/rabbitmq-deployment.yml"
-kubectl apply -f "$SCRIPT_DIR/infrastructure/rabbitmq-service.yml"
+kubectl apply -f "$SCRIPT_DIR/infrastructure/kafka-service.yml"
+kubectl apply -f "$SCRIPT_DIR/infrastructure/kafka-statefulset.yml"
 kubectl apply -f "$SCRIPT_DIR/infrastructure/mailhog-deployment.yml"
 kubectl apply -f "$SCRIPT_DIR/infrastructure/mailhog-service.yml"
 kubectl apply -f "$SCRIPT_DIR/infrastructure/prometheus-configmap.yml"
@@ -108,11 +108,12 @@ kubectl apply -f "$SCRIPT_DIR/infrastructure/grafana-service.yml"
 echo "Waiting for infrastructure to be ready..."
 kubectl -n automarket wait --for=condition=ready pod -l app=postgres --timeout=120s
 kubectl -n automarket wait --for=condition=ready pod -l app=redis --timeout=60s
-kubectl -n automarket wait --for=condition=ready pod -l app=rabbitmq --timeout=120s
+kubectl -n automarket wait --for=condition=ready pod -l app=kafka --timeout=180s
 
 # ── 5. Deploy application services ─────────────────────────────
 echo "Deploying application services..."
 kubectl apply -f "$SCRIPT_DIR/services/uploads-pvc.yml"
+kubectl apply -f "$SCRIPT_DIR/services/blog-uploads-pvc.yml"
 kubectl apply -f "$SCRIPT_DIR/services/auth-service-deployment.yml"
 kubectl apply -f "$SCRIPT_DIR/services/auth-service-service.yml"
 kubectl apply -f "$SCRIPT_DIR/services/listing-service-deployment.yml"
