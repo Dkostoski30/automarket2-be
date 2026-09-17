@@ -1,0 +1,83 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rules
+  namespace: automarket
+data:
+  automarket-rules.yml: |
+    groups:
+      # ── The async machinery ─────────────────────────────────────
+      # Every rule here covers a failure that is invisible from the outside:
+      # the API keeps returning 200 while events quietly stop flowing.
+      - name: automarket-messaging
+        rules:
+          - alert: OutboxRelayStalled
+            # Depth alone is normal under load; age is not. The relay polls every
+            # second, so anything older than two minutes means it is not draining.
+            expr: automarket_outbox_oldest_pending_seconds > 120
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "{{ $labels.service }} outbox is not draining"
+              description: >-
+                Oldest unpublished event is {{ $value | humanizeDuration }} old.
+                The service is still accepting writes, so consumers are falling
+                behind silently. Check broker reachability from the pod.
+
+          - alert: OutboxBacklogGrowing
+            expr: automarket_outbox_pending > 500
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "{{ $labels.service }} outbox backlog is {{ $value }} events"
+              description: >-
+                Publishing is slower than event production. Sustained growth ends
+                in unbounded table growth.
+
+          - alert: DeadLetteredRecords
+            # Any dead letter at all is worth a look: it means a record failed
+            # three retries and no consumer will ever apply it.
+            expr: increase(automarket_dlt_records_total[10m]) > 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "{{ $value }} record(s) dead-lettered in the last 10m"
+              description: >-
+                Search notification-service logs for "DEAD LETTER" — the log line
+                carries the original topic and the exception that caused it.
+
+          - alert: KafkaConsumerLagGrowing
+            expr: kafka_consumer_fetch_manager_records_lag_max > 1000
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Consumer lag on {{ $labels.instance }} is {{ $value }}"
+              description: >-
+                Projections are behind, so reads of a read model return stale data.
+
+      # ── Liveness and basics ─────────────────────────────────────
+      - name: automarket-services
+        rules:
+          - alert: ServiceDown
+            expr: up == 0
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "{{ $labels.instance }} has not been scrapeable for 2m"
+
+          - alert: HighServerErrorRate
+            expr: >-
+              sum by (job) (rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
+              /
+              sum by (job) (rate(http_server_requests_seconds_count[5m]))
+              > 0.05
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "{{ $labels.job }} is returning {{ $value | humanizePercentage }} 5xx"

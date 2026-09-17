@@ -33,6 +33,13 @@
             <artifactId>spring-kafka</artifactId>
         </dependency>
 
+        <!-- Gauges for outbox depth and staleness. Optional: a service that does
+             not run actuator still compiles, the metrics just go nowhere. -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-core</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>

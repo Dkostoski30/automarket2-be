@@ -1,7 +1,16 @@
 server:
   port: 8080
 
+  # Finish in-flight requests instead of dropping them when the pod gets SIGTERM.
+  # Without this a rolling update returns connection resets, and a Kafka listener
+  # can be killed mid-batch — safe for the idempotent projections, but it leaves
+  # auth-service's subscription consumer leaning on its inbox table for what should
+  # be an orderly stop.
+  shutdown: graceful
 spring:
+  lifecycle:
+    # Must stay below the pod's terminationGracePeriodSeconds (45s).
+    timeout-per-shutdown-phase: 30s
   application:
     name: automarket-gateway
 
@@ -23,6 +32,14 @@ spring:
           uri: ${AUTH_SERVICE_URL:http://auth-service:8081}
           predicates:
             - Path=/api/v1/auth/**
+          # Login and registration are unauthenticated, so the global per-user
+          # bucket cannot apply: this one is per IP and much tighter, which is what
+          # stops /auth/login being used as a password oracle.
+          filters:
+            - name: RequestRateLimiter
+              args:
+                key-resolver: "#{@clientIpKeyResolver}"
+                rate-limiter: "#{@authRateLimiter}"
 
         - id: users
           uri: ${AUTH_SERVICE_URL:http://auth-service:8081}
@@ -93,12 +110,59 @@ spring:
           predicates:
             - Path=/api/v1/webhooks/**
 
+        # OpenAPI documents, one route per service, so the gateway's Swagger UI
+        # can aggregate them. SetPath rewrites /api-docs/<service> to the
+        # /v3/api-docs the service actually serves.
+        - id: api-docs-auth-service
+          uri: ${AUTH_SERVICE_URL:http://auth-service:8081}
+          predicates:
+            - Path=/api-docs/auth-service
+          filters:
+            - SetPath=/v3/api-docs
+        - id: api-docs-listing-service
+          uri: ${LISTING_SERVICE_URL:http://listing-service:8082}
+          predicates:
+            - Path=/api-docs/listing-service
+          filters:
+            - SetPath=/v3/api-docs
+        - id: api-docs-blog-service
+          uri: ${BLOG_SERVICE_URL:http://blog-service:8083}
+          predicates:
+            - Path=/api-docs/blog-service
+          filters:
+            - SetPath=/v3/api-docs
+        - id: api-docs-inquiry-service
+          uri: ${INQUIRY_SERVICE_URL:http://inquiry-service:8084}
+          predicates:
+            - Path=/api-docs/inquiry-service
+          filters:
+            - SetPath=/v3/api-docs
+        - id: api-docs-payment-service
+          uri: ${PAYMENT_SERVICE_URL:http://payment-service:8086}
+          predicates:
+            - Path=/api-docs/payment-service
+          filters:
+            - SetPath=/v3/api-docs
+
       # Global default filters
       default-filters:
         - name: AddRequestHeader
           args:
             name: X-Gateway-Version
             value: "1.0"
+
+        # Every route was unlimited before this, despite the Redis dependency
+        # being declared for exactly this purpose. Buckets are per authenticated
+        # user, falling back to client IP — see RateLimiterConfig.
+        #
+        # 20/s sustained, bursting to 40, is well above normal browsing and well
+        # below what it takes to exhaust a service's 5-connection Hikari pool.
+        - name: RequestRateLimiter
+          args:
+            key-resolver: "#{@userOrIpKeyResolver}"
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            redis-rate-limiter.requestedTokens: 1
 
       # CORS — centralized at gateway level (no longer in individual services)
       globalcors:
@@ -123,11 +187,38 @@ spring:
 
 # JWT secret — must match auth-service
 automarket:
+  gateway:
+    # Proves to each service that a request came through the gateway, which is the
+    # only component that validates a JWT. Without it the X-User-* headers are
+    # self-asserted and any pod could claim ROLE_ADMIN.
+    shared-secret: ${GATEWAY_SHARED_SECRET:dev-insecure-gateway-secret}
   jwt:
     secret: ${JWT_SECRET:change-this-secret-in-production-must-be-at-least-32-chars}
 
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    # One page listing every service, selectable from the dropdown.
+    urls:
+      - name: auth-service
+        url: /api-docs/auth-service
+      - name: listing-service
+        url: /api-docs/listing-service
+      - name: blog-service
+        url: /api-docs/blog-service
+      - name: inquiry-service
+        url: /api-docs/inquiry-service
+      - name: payment-service
+        url: /api-docs/payment-service
+
 # Actuator
 management:
+  tracing:
+    sampling:
+      # Sample everything. There is no exporter, so a span costs a MDC entry and
+      # nothing else — and a trace id that exists on only 10% of requests is worse
+      # than useless when chasing one registration through five projections.
+      probability: 1.0
   endpoints:
     web:
       exposure:

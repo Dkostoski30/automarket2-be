@@ -98,9 +98,11 @@ kubectl apply -f "$SCRIPT_DIR/infrastructure/kafka-statefulset.yml"
 kubectl apply -f "$SCRIPT_DIR/infrastructure/mailhog-deployment.yml"
 kubectl apply -f "$SCRIPT_DIR/infrastructure/mailhog-service.yml"
 kubectl apply -f "$SCRIPT_DIR/infrastructure/prometheus-configmap.yml"
+kubectl apply -f "$SCRIPT_DIR/infrastructure/prometheus-rules-configmap.yml"
 kubectl apply -f "$SCRIPT_DIR/infrastructure/prometheus-deployment.yml"
 kubectl apply -f "$SCRIPT_DIR/infrastructure/prometheus-service.yml"
 kubectl apply -f "$SCRIPT_DIR/infrastructure/grafana-datasources.yml"
+kubectl apply -f "$SCRIPT_DIR/infrastructure/grafana-dashboards-configmap.yml"
 kubectl apply -f "$SCRIPT_DIR/infrastructure/grafana-deployment.yml"
 kubectl apply -f "$SCRIPT_DIR/infrastructure/grafana-service.yml"
 
@@ -134,6 +136,27 @@ kubectl apply -f "$SCRIPT_DIR/services/frontend-service.yml"
 # ── 6. Apply ingress ───────────────────────────────────────────
 echo "Applying ingress..."
 kubectl apply -f "$SCRIPT_DIR/ingress.yml"
+
+# ── 6b. Autoscaling and disruption budgets ─────────────────────
+echo "Applying HPAs and PodDisruptionBudgets..."
+kubectl apply -f "$SCRIPT_DIR/autoscaling.yml"
+
+# ── 6c. Network policies (opt-in) ──────────────────────────────
+# Restricts backend services to gateway + Prometheus traffic. Off by default:
+# NetworkPolicy support depends on the CNI, and if the kubelet's probes get
+# caught by it every pod fails readiness at once, which is a confusing way to
+# lose a demo. Turn it on deliberately and check the pods stay ready:
+#
+#   APPLY_NETWORK_POLICIES=1 ./deploy.sh
+#
+# The shared-secret check in GatewayAuthFilter is the actual authorization fix;
+# this is defence in depth on top of it.
+if [ "${APPLY_NETWORK_POLICIES:-0}" = "1" ]; then
+  echo "Applying network policies..."
+  kubectl apply -f "$SCRIPT_DIR/networkpolicy.yml"
+else
+  echo "Skipping network policies (set APPLY_NETWORK_POLICIES=1 to apply)."
+fi
 
 # ── 7. Print status ───────────────────────────────────────────
 echo ""

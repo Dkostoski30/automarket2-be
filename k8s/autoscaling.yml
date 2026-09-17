@@ -1,0 +1,334 @@
+# Horizontal autoscaling and disruption budgets.
+#
+# Every workload ran at replicas: 1 with neither, so any node drain or rolling
+# update was a full outage for that service, and load could not be absorbed at all.
+#
+# HPA needs metrics-server, which k3s ships by default. It scales on CPU only:
+# these services are I/O bound on Postgres and Kafka, so CPU is a weak signal, but
+# it is the signal available without a custom metrics adapter.
+#
+# The PDBs use maxUnavailable: 1 rather than minAvailable: 1 deliberately. At one
+# replica a minAvailable of 1 blocks every voluntary eviction, so a node can never
+# be drained. maxUnavailable: 1 does permit losing the only pod, but once the HPA
+# has scaled out it guarantees they are not all taken at once, which is the case
+# that actually matters during a cluster upgrade.
+
+# ──────────────────────────────────────────────────────────────
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: gateway
+  namespace: automarket
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: gateway
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleDown:
+      # Slow to scale down: a JVM takes ~30s to warm up, so flapping costs
+      # more than holding an extra pod for five minutes.
+      stabilizationWindowSeconds: 300
+    scaleUp:
+      stabilizationWindowSeconds: 60
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gateway
+  namespace: automarket
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: gateway
+
+# ──────────────────────────────────────────────────────────────
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: auth-service
+  namespace: automarket
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: auth-service
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleDown:
+      # Slow to scale down: a JVM takes ~30s to warm up, so flapping costs
+      # more than holding an extra pod for five minutes.
+      stabilizationWindowSeconds: 300
+    scaleUp:
+      stabilizationWindowSeconds: 60
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: auth-service
+  namespace: automarket
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: auth-service
+
+# ──────────────────────────────────────────────────────────────
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: listing-service
+  namespace: automarket
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: listing-service
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleDown:
+      # Slow to scale down: a JVM takes ~30s to warm up, so flapping costs
+      # more than holding an extra pod for five minutes.
+      stabilizationWindowSeconds: 300
+    scaleUp:
+      stabilizationWindowSeconds: 60
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: listing-service
+  namespace: automarket
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: listing-service
+
+# ──────────────────────────────────────────────────────────────
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: blog-service
+  namespace: automarket
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: blog-service
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleDown:
+      # Slow to scale down: a JVM takes ~30s to warm up, so flapping costs
+      # more than holding an extra pod for five minutes.
+      stabilizationWindowSeconds: 300
+    scaleUp:
+      stabilizationWindowSeconds: 60
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: blog-service
+  namespace: automarket
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: blog-service
+
+# ──────────────────────────────────────────────────────────────
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: inquiry-service
+  namespace: automarket
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: inquiry-service
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleDown:
+      # Slow to scale down: a JVM takes ~30s to warm up, so flapping costs
+      # more than holding an extra pod for five minutes.
+      stabilizationWindowSeconds: 300
+    scaleUp:
+      stabilizationWindowSeconds: 60
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: inquiry-service
+  namespace: automarket
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: inquiry-service
+
+# ──────────────────────────────────────────────────────────────
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: payment-service
+  namespace: automarket
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: payment-service
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleDown:
+      # Slow to scale down: a JVM takes ~30s to warm up, so flapping costs
+      # more than holding an extra pod for five minutes.
+      stabilizationWindowSeconds: 300
+    scaleUp:
+      stabilizationWindowSeconds: 60
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: payment-service
+  namespace: automarket
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: payment-service
+
+# ──────────────────────────────────────────────────────────────
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: notification-service
+  namespace: automarket
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: notification-service
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleDown:
+      # Slow to scale down: a JVM takes ~30s to warm up, so flapping costs
+      # more than holding an extra pod for five minutes.
+      stabilizationWindowSeconds: 300
+    scaleUp:
+      stabilizationWindowSeconds: 60
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: notification-service
+  namespace: automarket
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: notification-service
+
+# ──────────────────────────────────────────────────────────────
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: frontend
+  namespace: automarket
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: frontend
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleDown:
+      # Slow to scale down: a JVM takes ~30s to warm up, so flapping costs
+      # more than holding an extra pod for five minutes.
+      stabilizationWindowSeconds: 300
+    scaleUp:
+      stabilizationWindowSeconds: 60
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: frontend
+  namespace: automarket
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: frontend

@@ -29,6 +29,14 @@ public final class KafkaTopics {
     /** Suffix applied by the dead-letter recoverer in {@link KafkaConfig}. */
     public static final String DLT_SUFFIX = "-dlt";
 
+    public static final String USER_EVENTS_DLT         = USER_EVENTS + DLT_SUFFIX;
+    public static final String LISTING_EVENTS_DLT      = LISTING_EVENTS + DLT_SUFFIX;
+    public static final String INQUIRY_EVENTS_DLT      = INQUIRY_EVENTS + DLT_SUFFIX;
+    public static final String SUBSCRIPTION_EVENTS_DLT = SUBSCRIPTION_EVENTS + DLT_SUFFIX;
+
+    /** Consumer group for the dead-letter monitor. */
+    public static final String GROUP_DLT_MONITOR = "dlt-monitor";
+
     // ─── Consumer groups (one per service) ───────────────────────────────────
     public static final String GROUP_NOTIFICATION = "notification-service";
     public static final String GROUP_AUTH         = "auth-service";

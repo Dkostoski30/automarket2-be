@@ -64,6 +64,22 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- Aggregated Swagger UI: one page at the gateway listing every service,
+             instead of five separate ports to remember. -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webflux-ui</artifactId>
+        </dependency>
+
+        <!-- Trace/span ids in every log line, propagated over HTTP and Kafka.
+             No exporter and no collector: the ids alone are what make a single
+             registration followable across the outbox, the broker and five
+             projections, which is otherwise guesswork from timestamps. -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing-bridge-brave</artifactId>
+        </dependency>
     </dependencies>
 
     <build>

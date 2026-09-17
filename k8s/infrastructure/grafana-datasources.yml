@@ -9,6 +9,9 @@ data:
     datasources:
       - name: Prometheus
         type: prometheus
+        # Fixed uid: provisioned dashboards reference the datasource by uid, and
+        # without this Grafana generates a random one on every fresh volume.
+        uid: prometheus
         access: proxy
         url: http://prometheus:9090
         isDefault: true

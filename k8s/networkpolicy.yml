@@ -1,0 +1,198 @@
+# Restricts who may open a connection to each backend service.
+#
+# This is the network half of ARCHITECTURE.md #33. The service ports are not
+# published through the ingress, but they were reachable from every pod in the
+# namespace, and the services trusted the X-User-* headers on sight — so any
+# workload could assert ROLE_ADMIN. GatewayAuthFilter now requires a shared
+# secret; these policies remove the reachability as well, so an attacker needs
+# both a route to the port and the secret.
+#
+# k3s enforces NetworkPolicy (kube-router), so these are not decorative.
+#
+# Selecting a pod with any policy denies all ingress that is not explicitly
+# allowed below, which is why no namespace-wide default-deny is needed — and why
+# infrastructure pods (postgres, kafka, redis, mailhog) are left unselected
+# rather than being given a policy that would have to enumerate every client.
+#
+# Egress is deliberately unrestricted: every service needs DNS, Postgres and
+# Kafka, and locking that down without breaking cluster DNS is a separate job.
+
+# ──────────────────────────────────────────────────────────────
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: auth-service-allow-gateway
+  namespace: automarket
+spec:
+  podSelector:
+    matchLabels:
+      app: auth-service
+  policyTypes:
+    - Ingress
+  ingress:
+    # Application traffic arrives only via the gateway.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: gateway
+      ports:
+        - protocol: TCP
+          port: 8081
+    # Prometheus scrapes /actuator/prometheus on the same port.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 8081
+
+# ──────────────────────────────────────────────────────────────
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: listing-service-allow-gateway
+  namespace: automarket
+spec:
+  podSelector:
+    matchLabels:
+      app: listing-service
+  policyTypes:
+    - Ingress
+  ingress:
+    # Application traffic arrives only via the gateway.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: gateway
+      ports:
+        - protocol: TCP
+          port: 8082
+    # Prometheus scrapes /actuator/prometheus on the same port.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 8082
+
+# ──────────────────────────────────────────────────────────────
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: blog-service-allow-gateway
+  namespace: automarket
+spec:
+  podSelector:
+    matchLabels:
+      app: blog-service
+  policyTypes:
+    - Ingress
+  ingress:
+    # Application traffic arrives only via the gateway.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: gateway
+      ports:
+        - protocol: TCP
+          port: 8083
+    # Prometheus scrapes /actuator/prometheus on the same port.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 8083
+
+# ──────────────────────────────────────────────────────────────
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: inquiry-service-allow-gateway
+  namespace: automarket
+spec:
+  podSelector:
+    matchLabels:
+      app: inquiry-service
+  policyTypes:
+    - Ingress
+  ingress:
+    # Application traffic arrives only via the gateway.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: gateway
+      ports:
+        - protocol: TCP
+          port: 8084
+    # Prometheus scrapes /actuator/prometheus on the same port.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 8084
+
+# ──────────────────────────────────────────────────────────────
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: payment-service-allow-gateway
+  namespace: automarket
+spec:
+  podSelector:
+    matchLabels:
+      app: payment-service
+  policyTypes:
+    - Ingress
+  ingress:
+    # Application traffic arrives only via the gateway.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: gateway
+      ports:
+        - protocol: TCP
+          port: 8086
+    # Prometheus scrapes /actuator/prometheus on the same port.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 8086
+
+# ──────────────────────────────────────────────────────────────
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: notification-service-allow-scrape
+  namespace: automarket
+spec:
+  podSelector:
+    matchLabels:
+      app: notification-service
+  policyTypes:
+    - Ingress
+  ingress:
+    # notification-service has no HTTP clients: it consumes Kafka and sends
+    # mail. Only the scraper and the kubelet need to reach it.
+    # Prometheus scrapes /actuator/prometheus on the same port.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 8087

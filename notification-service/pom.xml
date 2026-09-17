@@ -73,6 +73,15 @@
             <artifactId>spring-kafka-test</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- Trace/span ids in every log line, propagated over HTTP and Kafka.
+             No exporter and no collector: the ids alone are what make a single
+             registration followable across the outbox, the broker and five
+             projections, which is otherwise guesswork from timestamps. -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing-bridge-brave</artifactId>
+        </dependency>
     </dependencies>
 
     <build>

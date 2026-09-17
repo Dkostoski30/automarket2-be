@@ -1,164 +1,195 @@
 # AutoMarket Backend
 
-Spring Boot 3 REST API for the AutoMarket car marketplace platform.
+Car marketplace platform: six Spring Boot microservices behind a Spring Cloud Gateway,
+communicating over Kafka. The Angular frontend lives in a separate repository
+(`automarket2-FE`).
 
 ## Tech Stack
 
-- **Java 21**
-- **Spring Boot 3.2.3**
-- **PostgreSQL 16** — primary database
-- **Redis 7** — caching
-- **Flyway** — database migrations
-- **Spring Security + JWT** (JJWT 0.12.5)
-- **Stripe Java SDK** (24.3.0) — subscription payments
-- **AWS S3 SDK** — image storage in production
-- **MapStruct** — entity/DTO mapping
-- **Lombok** — boilerplate reduction
-- **SpringDoc OpenAPI 2.3** — Swagger UI
+- **Java 21**, **Spring Boot 3.2.3**, **Spring Cloud 2023.0.1** (Gateway)
+- **PostgreSQL 16** — one shared database, each service owning its own tables
+- **Redis 7** — caching and gateway rate-limiter buckets
+- **Kafka 3.7** (single-node KRaft, no ZooKeeper) — event bus
+- **Flyway** — migrations, one history table per service
+- **Spring Security + JWT** (JJWT 0.12.5) — validated at the gateway only
+- **Stripe** (24.3.0), **AWS S3 SDK**, **MapStruct**, **Lombok**, **SpringDoc OpenAPI 2.3**
 
-## Project Structure
+## Modules
 
-```
-src/main/java/com/automarket/
-├── controller/       REST controllers (auth, listings, users, blog, subscriptions, admin)
-├── service/          Business logic services
-├── entity/           JPA entities
-├── dto/              Request/response DTOs
-├── repository/       Spring Data JPA repositories
-├── security/         JWT filter, UserDetails, SecurityConfig
-├── config/           CORS, S3 storage, Redis cache, OpenAPI, Auditing
-├── mapper/           MapStruct mappers
-├── exception/        Custom exceptions and global exception handler
-├── logging/          AOP request logging
-└── specification/    JPA Specification for dynamic filtering
-```
+| Module | Port | Owns |
+|---|---|---|
+| `gateway` | 8080 | Routing, JWT validation, CORS, rate limiting — the only entry point |
+| `auth-service` | 8081 | Users, roles, refresh tokens, login/registration |
+| `listing-service` | 8082 | Listings, images, favorites, analytics, moderation, reference data |
+| `blog-service` | 8083 | Blog posts |
+| `inquiry-service` | 8084 | Buyer–seller inquiries |
+| `payment-service` | 8086 | Subscriptions, Stripe integration |
+| `notification-service` | 8087 | Email on events. No database — pure Kafka consumer |
 
-## Running Locally
+Five shared libraries back them: `automarket-common` (DTOs, exceptions),
+`automarket-security-common` (`GatewayAuthFilter`), `automarket-storage` (local/S3
+abstraction), `automarket-events` (event payloads, topic names), `automarket-messaging`
+(transactional outbox).
 
-### Prerequisites
+There is no `reference-service` — reference data was merged into `listing-service`.
 
-- Java 21
-- Maven 3.9+
-- Docker (for PostgreSQL + Redis)
+## Running Everything in Docker
 
-### Start infrastructure
+The quickest path. `.env` is already written for this mode (it uses Docker-internal
+hostnames: `postgres`, `redis`, `kafka:19092`, `mailhog`).
 
 ```bash
-# From project root
-docker compose up -d postgres redis mailhog
+docker compose up --build -d     # first run builds 7 images — slow
+docker compose logs -f gateway   # the gateway starts last, once services are healthy
 ```
 
-### Run the application
+Startup is gated on healthchecks, so expect a few minutes before the gateway answers.
+
+Then start the frontend from its own repository:
 
 ```bash
-cd automarket-backend
-./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+cd ../automarket2-FE     # or wherever you cloned it
+npm install              # first time only
+npm start                # → http://localhost:4200
 ```
 
-The API starts at **http://localhost:8080**.
-Swagger UI: **http://localhost:8080/swagger-ui.html**
+`src/environments/environment.ts` points at `http://localhost:8080/api/v1`, straight at
+the gateway. The gateway allows CORS from `${FRONTEND_URL}` (`http://localhost:4200`), so
+no dev-server proxy is needed.
 
-### Environment Variables
+Note that the frontend is **not** part of `docker-compose.yml` — it is containerized only
+for the Kubernetes deployment.
+
+### What is exposed
+
+| URL | Service |
+|---|---|
+| http://localhost:4200 | Frontend (`ng serve`) |
+| http://localhost:8080 | Gateway — the only API entry point |
+| http://localhost:8080/swagger-ui.html | Aggregated Swagger; pick a service from the dropdown |
+| http://localhost:8025 | MailHog inbox |
+| http://localhost:8090 | Kafka UI |
+| `localhost:5433` | PostgreSQL — **5433** on the host, 5432 inside the network |
+| `localhost:9092` | Kafka — `kafka:19092` inside the network |
+
+Monitoring is behind a Compose profile:
+
+```bash
+docker compose --profile monitoring up -d   # Prometheus :9090, Grafana :3000 (admin/admin)
+```
+
+A quick smoke test once the gateway is up:
+
+```bash
+curl http://localhost:8080/api/v1/reference/car-brands
+```
+
+## Running Services from the IDE
+
+Infrastructure in Docker, services on the host:
+
+```bash
+docker compose up -d postgres redis kafka mailhog
+```
+
+**The `.env` trap:** every service declares
+`spring.config.import: "optional:file:.env[.properties]"`, so an IDE run picks up the
+same `.env` — with `postgres`, `redis`, `kafka:19092` and `mailhog` as hostnames, none of
+which resolve from the host. The defaults baked into each `application.yml` are already
+correct for localhost; it is `.env` that breaks the run.
+
+Either point `.env` at host values while working this way:
+
+```properties
+DB_URL=jdbc:postgresql://localhost:5433/automarket
+KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+REDIS_HOST=localhost
+MAIL_HOST=localhost
+```
+
+…or override per run:
+
+```bash
+./mvnw spring-boot:run -pl auth-service \
+  -Dspring-boot.run.jvmArguments="-DDB_URL=jdbc:postgresql://localhost:5433/automarket -DKAFKA_BOOTSTRAP_SERVERS=localhost:9092 -DREDIS_HOST=localhost -DMAIL_HOST=localhost"
+```
+
+Start the domain services first, the gateway last. Order among the services does not
+matter: they share one `automarket` database but each keeps a private Flyway history
+table (`flyway_history_auth`, `flyway_history_listing`, …), so migrations never collide.
+
+## Configuration
+
+Copy `.env.example` to `.env` and fill it in. The variables that matter most:
 
 | Variable | Default | Description |
 |---|---|---|
-| `DB_URL` | `jdbc:postgresql://localhost:5432/automarket` | JDBC connection URL |
-| `DB_USERNAME` | `automarket` | Database username |
-| `DB_PASSWORD` | `secret` | Database password |
-| `REDIS_HOST` | `localhost` | Redis host |
-| `REDIS_PORT` | `6379` | Redis port |
-| `JWT_SECRET` | *(insecure default)* | At least 32-char secret for JWT signing |
+| `DB_URL` | `jdbc:postgresql://localhost:5432/automarket` | JDBC URL. Host access via Compose is port **5433** |
+| `DB_USERNAME` / `DB_PASSWORD` | `automarket` / — | Database credentials |
+| `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6379` | Redis |
+| `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | `kafka:19092` from inside Compose |
+| `JWT_SECRET` | *(insecure default)* | ≥32 chars. Must match between gateway and auth-service |
+| `GATEWAY_SHARED_SECRET` | `dev-insecure-gateway-secret` | Proves a request came through the gateway. Must be identical in the gateway **and all six services** |
 | `FRONTEND_URL` | `http://localhost:4200` | Allowed CORS origin |
 | `STORAGE_PROVIDER` | `local` | `local` or `s3` |
-| `LOCAL_UPLOAD_DIR` | `./uploads` | Directory for uploaded images (local mode) |
-| `S3_BUCKET` | — | S3 bucket name |
-| `CDN_URL` | — | CDN base URL for images |
-| `MAIL_HOST` | `localhost` | SMTP host |
-| `MAIL_PORT` | `1025` | SMTP port |
-| `STRIPE_ENABLED` | `false` | Enable Stripe payments |
-| `STRIPE_SECRET_KEY` | — | Stripe secret key (`sk_...`) |
-| `STRIPE_WEBHOOK_SECRET` | — | Stripe webhook endpoint secret (`whsec_...`) |
-| `STRIPE_PRICE_PREMIUM` | — | Stripe Price ID for PREMIUM plan |
+| `LOCAL_UPLOAD_DIR` | `./uploads` | Upload directory in local mode |
+| `MAIL_PROVIDER` | `smtp` | `smtp` (MailHog) or `resend` (placeholder — logs only) |
+| `MAIL_HOST` / `MAIL_PORT` | `localhost` / `1025` | SMTP target |
+| `STRIPE_ENABLED` | `false` | Enables the Stripe integration |
 
-## Database Migrations
+`GATEWAY_SHARED_SECRET` is absent from the committed `.env`, so everything falls back to
+the same development default and works locally. If you set it, set it **everywhere** — a
+mismatch makes services reject gateway traffic with 401.
 
-Flyway migrations run automatically on startup from `src/main/resources/db/migration/`:
+## Seed Data
 
-| Migration | Description |
-|---|---|
-| `V1__core_schema.sql` | Users, roles, refresh tokens, cities |
-| `V2__reference_data.sql` | Role seed data |
-| `V3__listings_schema.sql` | Listings, images, car details |
-| `V4__blog_schema.sql` | Blog posts |
-| `V5__business_features.sql` | Subscriptions, analytics, inquiries, favorites |
-| `V6__search_fulltext.sql` | Full-text search indexes |
-| `V7__seed_reference_data.sql` | Reference data (brands, fuel types, body types, etc.) |
-
-## API Endpoints
-
-### Authentication
-| Method | Path | Description |
-|---|---|---|
-| POST | `/api/v1/auth/register` | Register new user |
-| POST | `/api/v1/auth/login` | Login, returns JWT pair |
-| POST | `/api/v1/auth/refresh` | Refresh access token |
-| POST | `/api/v1/auth/logout` | Revoke refresh token |
-
-### Listings
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| GET | `/api/v1/listings` | — | Paginated + filtered listing search |
-| GET | `/api/v1/listings/featured` | — | Featured listings |
-| GET | `/api/v1/listings/{slug}` | — | Listing detail by slug |
-| POST | `/api/v1/listings` | USER | Create listing |
-| PUT | `/api/v1/listings/{id}` | Owner | Update listing |
-| DELETE | `/api/v1/listings/{id}` | Owner | Delete listing |
-| POST | `/api/v1/listings/{id}/images` | Owner | Upload image |
-| POST | `/api/v1/listings/{id}/favorite` | USER | Add to favorites |
-
-### Subscriptions
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| GET | `/api/v1/subscriptions/plans` | — | Available plans |
-| POST | `/api/v1/subscriptions/checkout` | USER | Start Stripe checkout |
-| POST | `/api/v1/subscriptions/webhook` | — | Stripe webhook receiver |
-
-### Admin / Moderation
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| GET | `/api/v1/admin/dashboard` | ADMIN | Dashboard stats |
-| GET | `/api/v1/moderation/listings` | MODERATOR | Pending listings queue |
-| POST | `/api/v1/moderation/listings/{id}/approve` | MODERATOR | Approve listing |
-| POST | `/api/v1/moderation/listings/{id}/reject` | MODERATOR | Reject listing |
-
-## Stripe Setup
-
-1. Create a product and price in your [Stripe Dashboard](https://dashboard.stripe.com)
-2. Set environment variables:
-   ```env
-   STRIPE_ENABLED=true
-   STRIPE_SECRET_KEY=sk_test_...
-   STRIPE_WEBHOOK_SECRET=whsec_...
-   STRIPE_PRICE_PREMIUM=price_...
-   ```
-3. Configure a webhook endpoint in Stripe Dashboard pointing to `/api/v1/subscriptions/webhook`
-4. Subscribe to events: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`
-
-## Running Tests
+`seed.sql` is not mounted anywhere. Load it by hand once the services have run their
+migrations:
 
 ```bash
-./mvnw test
+docker compose exec -T postgres psql -U automarket -d automarket < seed.sql
 ```
 
-## Building for Production
+## Security Model
+
+The gateway is the only component that validates a JWT. It resolves the token into
+`X-User-*` headers and signs the request with `GATEWAY_SHARED_SECRET`;
+`GatewayAuthFilter` in each service verifies that secret before trusting the headers.
+Services are therefore never exposed directly — anything that can reach a service port
+can assert any identity if the shared secret is known.
+
+Rate limiting is applied at the gateway, backed by Redis: 20 req/s sustained (bursting to
+40) keyed per authenticated user, falling back to client IP. `/api/v1/auth/**` gets a
+tighter per-IP bucket so login cannot be used as a password oracle.
+
+## Tests
 
 ```bash
-./mvnw package -DskipTests
-
-# Or with Docker
-docker build -t automarket-backend .
+./mvnw verify
 ```
 
-The Dockerfile uses a multi-stage build:
-1. Build stage: Maven + JDK 21 Alpine
-2. Runtime stage: JRE 21 Alpine (minimized image)
+Tests use Testcontainers, so a running Docker daemon is required.
+
+## Building Images
+
+Each service has its own Dockerfile that builds the whole Maven reactor and extracts
+layers with `jarmode=layertools`. Build from the **repository root** — the build context
+is the reactor, not the module directory:
+
+```bash
+docker build -f auth-service/Dockerfile -t automarket/automarket-auth-service:latest .
+```
+
+## Kubernetes
+
+```bash
+bash k8s/deploy.sh
+```
+
+Creates a k3d cluster, builds and imports every image (including the frontend, found at
+`$HOME/WebstormProjects/automarket2-FE` or wherever `FE_DIR` points), and applies the
+manifests. Add `127.0.0.1 automarket.local` to your hosts file, then open
+http://automarket.local. Teardown: `k3d cluster delete automarket`.
+
+See [devops.md](devops.md) for the full DevOps setup: CI, manifests, autoscaling and
+monitoring. [ARCHITECTURE.md](ARCHITECTURE.md) covers service boundaries and event flows.

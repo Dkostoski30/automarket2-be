@@ -2,6 +2,7 @@ package com.automarket.auth.config;
 
 import com.automarket.security.common.GatewayAuthFilter;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -29,12 +30,14 @@ public class SecurityConfig {
     private final UserDetailsService userDetailsService;
 
     @Bean
-    public GatewayAuthFilter gatewayAuthFilter() {
-        return new GatewayAuthFilter();
+    public GatewayAuthFilter gatewayAuthFilter(
+            @Value("${automarket.gateway.shared-secret:}") String gatewaySharedSecret) {
+        return new GatewayAuthFilter(gatewaySharedSecret);
     }
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(
+            HttpSecurity http, GatewayAuthFilter gatewayAuthFilter) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -42,14 +45,21 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers("/api/v1/users/{id}").permitAll()
                         .requestMatchers("/api/v1/webhooks/**").permitAll()
-                        .requestMatchers("/actuator/health").permitAll()
+                        // Health for the kubelet, prometheus for the scraper. Both
+                        // were reachable only with credentials before, so every scrape
+                        // returned 401 and no service metrics ever reached Prometheus
+                        // (ARCHITECTURE.md #32). These pods are not internet-facing:
+                        // the ingress routes only to the gateway and the frontend.
+                        .requestMatchers(HttpMethod.GET,
+                                "/actuator/health", "/actuator/health/**",
+                                "/actuator/prometheus", "/actuator/info").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .authenticationProvider(authenticationProvider())
-                .addFilterBefore(gatewayAuthFilter(), UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(gatewayAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

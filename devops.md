@@ -5,10 +5,10 @@
 AutoMarket is a car marketplace platform built with a microservice architecture:
 
 - **Frontend**: Angular 19 served via Nginx
-- **Backend**: 8 Spring Boot microservices behind a Spring Cloud Gateway
-- **Database**: PostgreSQL 16
-- **Cache**: Redis 7
-- **Message Broker**: RabbitMQ 3
+- **Backend**: 6 Spring Boot microservices behind a Spring Cloud Gateway
+- **Database**: PostgreSQL 16 — one shared database, each service owning its own tables
+- **Cache**: Redis 7 — caching and gateway rate-limiter buckets
+- **Message Broker**: Kafka 3.7, single-node KRaft (no ZooKeeper)
 - **Mail**: MailHog (development SMTP)
 
 ### Architecture Diagram
@@ -21,18 +21,25 @@ AutoMarket is a car marketplace platform built with a microservice architecture:
                     ┌──────────▼─────────────┐
                     │   Spring Cloud Gateway │ :8080
                     └──────────┬─────────────┘
-          ┌────────┬───────┬───┴────┬─────────┬──────────┬──────────┐
-          ▼        ▼       ▼        ▼         ▼          ▼          ▼
-      auth     listing   blog   inquiry  reference  payment  notification
-      :8081    :8082     :8083   :8084    :8085      :8086    :8087
-          │        │       │        │         │          │          │
-          └────────┴───────┴────┬───┴─────────┴──────────┘          │
-                                ▼                                   ▼
-                    ┌───────────────────┐                ┌─────────────────┐
-                    │   PostgreSQL      │                │    RabbitMQ     │
-                    │   Redis           │                │    MailHog      │
-                    └───────────────────┘                └─────────────────┘
+          ┌────────┬───────────┴───┬─────────┬──────────────┐
+          ▼        ▼               ▼         ▼              ▼
+      auth     listing          blog     inquiry        payment      notification
+      :8081    :8082            :8083     :8084          :8086          :8087
+          │        │               │         │              │              │
+          └────────┴───────────┬───┴─────────┴──────────────┘              │
+                               ▼                                           ▼
+                    ┌───────────────────┐                      ┌─────────────────┐
+                    │   PostgreSQL      │                      │     Kafka       │
+                    │   Redis           │                      │    MailHog      │
+                    └───────────────────┘                      └─────────────────┘
 ```
+
+The gateway is the only component that validates a JWT. It resolves the token into
+`X-User-*` headers and signs the request with `GATEWAY_SHARED_SECRET`, which
+`GatewayAuthFilter` verifies in each service before trusting those headers.
+
+`notification-service` has no database — it is a pure Kafka consumer that sends mail.
+Reference data was merged into `listing-service`; there is no `reference-service`.
 
 ## 2. Public Git Repository
 
@@ -43,14 +50,14 @@ automarket2-BE/
 ├── pom.xml                          # Parent POM
 ├── automarket-common/               # Shared DTOs, exceptions
 ├── automarket-security-common/      # Gateway auth filter
-├── automarket-storage/              # File storage abstraction
-├── automarket-events/               # RabbitMQ event DTOs
+├── automarket-storage/              # File storage abstraction (local / S3)
+├── automarket-events/               # Kafka event payloads, topic names
+├── automarket-messaging/            # Transactional outbox
 ├── gateway/                         # Spring Cloud Gateway (:8080)
 ├── auth-service/                    # Authentication & users (:8081)
-├── listing-service/                 # Car listings (:8082)
+├── listing-service/                 # Car listings + reference data (:8082)
 ├── blog-service/                    # Blog posts (:8083)
 ├── inquiry-service/                 # Buyer-seller inquiries (:8084)
-├── reference-service/               # Lookup data (:8085)
 ├── payment-service/                 # Stripe subscriptions (:8086)
 ├── notification-service/            # Event-driven email (:8087)
 ├── docker-compose.yml
@@ -62,47 +69,75 @@ The frontend is in a separate repository (`automarket2-FE/`).
 
 ## 3. Dockerization
 
-Each microservice has its own `Dockerfile` using a multi-stage build:
+Each microservice has its own `Dockerfile` using a multi-stage build. All seven follow
+the same pattern:
 
-1. **Build stage**: Uses Maven to compile the service and its dependencies
-2. **Runtime stage**: Uses a minimal JDK 21 image to run the resulting JAR
-
-Example (all 8 services follow the same pattern):
 ```dockerfile
-# Build stage
-FROM maven:3.9-eclipse-temurin-21 AS build
+# ── Stage 1: Build ───────────────────────────────────────────────
+FROM maven:3.9-eclipse-temurin-21-alpine AS build
 WORKDIR /app
-COPY pom.xml .
-COPY <module>/pom.xml <module>/
-COPY automarket-common/pom.xml automarket-common/
-# ... copy sources and build ...
-RUN mvn package -pl <module> -am -DskipTests
+COPY . .
+RUN --mount=type=cache,target=/root/.m2,sharing=locked \
+    mvn package -pl <module> -am -DskipTests -B && \
+    java -Djarmode=layertools -jar <module>/target/*.jar \
+      extract --destination <module>/target/extracted
 
-# Runtime stage
-FROM eclipse-temurin:21-jre-alpine
-COPY --from=build /app/<module>/target/*.jar app.jar
+# ── Stage 2: Runtime ─────────────────────────────────────────────
+FROM eclipse-temurin:21-jre-alpine AS runtime
+WORKDIR /app
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+USER appuser
+COPY --from=build /app/<module>/target/extracted/dependencies/ ./
+COPY --from=build /app/<module>/target/extracted/spring-boot-loader/ ./
+COPY --from=build /app/<module>/target/extracted/snapshot-dependencies/ ./
+COPY --from=build /app/<module>/target/extracted/application/ ./
 EXPOSE <port>
-ENTRYPOINT ["java", "-jar", "app.jar"]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+  CMD wget -qO- http://localhost:<port>/actuator/health || exit 1
+ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=75.0", \
+  "-XX:+UseSerialGC", "-Xss256k", \
+  "org.springframework.boot.loader.launch.JarLauncher"]
 ```
 
-The frontend uses an Nginx-based Dockerfile:
+Three decisions worth stating:
+
+- **The whole reactor is copied in one `COPY . .`**, not module-by-module. Listing
+  module paths individually meant every new Maven module silently broke the build.
+  `.dockerignore` keeps the context small and the `/root/.m2` cache mount is what
+  actually keeps dependency downloads off the critical path.
+- **The build context is the repository root**, so images must be built from there:
+  `docker build -f auth-service/Dockerfile -t ... .`
+- **`layertools` extraction** puts dependencies in their own image layer, so a code-only
+  change re-pushes kilobytes rather than the whole fat jar. The container runs as a
+  non-root user and the `HEALTHCHECK` is what Compose's `depends_on: service_healthy`
+  gates on.
+
+The frontend (separate repository) uses an Nginx-based Dockerfile:
+
 ```dockerfile
-# Build stage
 FROM node:20-alpine AS build
 WORKDIR /app
-COPY package*.json .
-RUN npm ci
+COPY package*.json ./
+RUN npm ci --prefer-offline
 COPY . .
-RUN npm run build --prod
+RUN npm run build:prod
 
-# Runtime stage
-FROM nginx:alpine
-COPY --from=build /app/dist/automarket2/browser /usr/share/nginx/html
+FROM nginx:1.25-alpine AS runtime
+RUN rm /etc/nginx/conf.d/default.conf
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist/automarket-frontend/browser /usr/share/nginx/html
 EXPOSE 80
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
+  CMD wget -qO- http://localhost/health || exit 1
 ```
 
-Nginx proxies `/api/` requests to the gateway service.
+`nginx.conf` serves the SPA with an `index.html` fallback, exposes `/health` for the
+probe, and sets long cache headers on hashed static assets.
+
+> **Known wrinkle:** `nginx.conf` proxies `/api/` to `http://backend:8080`, but no service
+> is named `backend` — in Kubernetes it is `gateway`. This is currently harmless because
+> the Ingress routes `/api` and `/uploads` straight to the gateway and never lets those
+> paths reach Nginx. It would bite if the frontend container were ever used standalone.
 
 ## 4. Docker Compose Orchestration
 
@@ -113,78 +148,140 @@ services:
   # Infrastructure
   postgres:        # PostgreSQL 16 — port 5433:5432, healthcheck with pg_isready
   redis:           # Redis 7 — port 6379, healthcheck with redis-cli ping
-  rabbitmq:        # RabbitMQ 3 — ports 5672 (AMQP) + 15672 (Management UI)
+  kafka:           # Kafka 3.7 KRaft — 9092 (host) / 19092 (in-network)
+  kafka-ui:        # Topic + consumer-lag browser → localhost:8090
   mailhog:         # MailHog — ports 1025 (SMTP) + 8025 (Web UI)
+  prometheus:      # profile: monitoring → localhost:9090
+  grafana:         # profile: monitoring → localhost:3000 (admin/admin)
 
   # Application services (all use .env for configuration)
-  auth-service:          # Port 8081, depends on postgres + redis + rabbitmq
-  listing-service:       # Port 8082, depends on postgres + redis + rabbitmq, mounts uploads volume
-  blog-service:          # Port 8083, depends on postgres, mounts uploads volume
-  inquiry-service:       # Port 8084, depends on postgres + rabbitmq
-  reference-service:     # Port 8085, depends on postgres + redis
-  payment-service:       # Port 8086, depends on postgres + rabbitmq
-  notification-service:  # Port 8087, depends on rabbitmq + mailhog
-
-  # Entry points
-  gateway:         # Port 8080, routes to all backend services
-  frontend:        # Port 80, depends on gateway
+  auth-service:          # Port 8081, depends on postgres + redis + kafka
+  listing-service:       # Port 8082, mounts uploads volume
+  blog-service:          # Port 8083, mounts uploads volume
+  inquiry-service:       # Port 8084
+  payment-service:       # Port 8086
+  notification-service:  # Port 8087, no DB — Kafka consumer only
+  gateway:               # Port 8080, waits for all five domain services to be healthy
 
 volumes:
   postgres_data:   # Persistent database storage
+  kafka_data:      # Kafka log directories
   uploads_data:    # Shared volume for listing/blog file uploads
+  prometheus_data:
+  grafana_data:
 ```
+
+Kafka advertises **two listeners**: `INTERNAL` (`kafka:19092`) for other Compose
+services, and `EXTERNAL` (`localhost:9092`) so a service started from the IDE can still
+reach the broker. That is why `.env` and `.env.example` carry different values for
+`KAFKA_BOOTSTRAP_SERVERS`.
+
+The **frontend is not part of Compose** — it runs via `ng serve` during development and
+is containerized only for the Kubernetes deployment.
 
 ### Running Locally
 
 ```bash
-docker compose up --build
+docker compose up --build -d
+docker compose logs -f gateway      # starts last, once the services report healthy
 ```
 
-- Frontend: `http://localhost`
-- API: `http://localhost/api/v1/references/brands`
-- RabbitMQ UI: `http://localhost:15672` (automarket/secret)
-- MailHog UI: `http://localhost:8025`
+Then, from the frontend repository, `npm install && npm start`.
 
-## 5. CI/CD Pipeline (GitHub Actions → DockerHub)
+- Frontend: `http://localhost:4200` (`ng serve`, talks directly to the gateway)
+- API: `http://localhost:8080/api/v1/reference/car-brands`
+- Swagger (all services aggregated): `http://localhost:8080/swagger-ui.html`
+- Kafka UI: `http://localhost:8090`
+- MailHog UI: `http://localhost:8025`
+- PostgreSQL: `localhost:5433` (5432 inside the network)
+
+Monitoring is opt-in via a Compose profile:
+
+```bash
+docker compose --profile monitoring up -d   # Prometheus :9090, Grafana :3000
+```
+
+### Running services from the IDE
+
+Every service declares `spring.config.import: "optional:file:.env[.properties]"`, so an
+IDE run picks up the same `.env` — whose hostnames (`postgres`, `redis`, `kafka:19092`,
+`mailhog`) do not resolve from the host. The `application.yml` defaults are already
+correct for localhost; `.env` is what breaks the run. Start infrastructure only
+(`docker compose up -d postgres redis kafka mailhog`) and either point `.env` at host
+values or override `DB_URL` / `KAFKA_BOOTSTRAP_SERVERS` / `REDIS_HOST` / `MAIL_HOST` per
+run. Remember the database is on **5433** from the host.
+
+## 5. CI Pipeline (GitHub Actions)
 
 ### Backend CI (`.github/workflows/ci.yml`)
 
-Triggers on push to `master` or `feature/microservice-migration`.
+Triggers on push to `master` or `feature/devops-setup`, **and on pull requests to
+`master`**. Doc-only changes are skipped via `paths-ignore`.
 
-Uses a **matrix strategy** to build all 8 services in parallel:
+Two jobs, in sequence:
+
+**1. `verify` — compile and test**
 
 ```yaml
-strategy:
-  matrix:
-    service:
-      - gateway
-      - auth-service
-      - listing-service
-      - blog-service
-      - inquiry-service
-      - reference-service
-      - payment-service
-      - notification-service
+- uses: actions/setup-java@v4
+  with:
+    java-version: '21'
+    distribution: temurin
+    cache: maven
+- run: ./mvnw -B --no-transfer-progress verify
 ```
 
-Each job:
-1. Checks out the code
-2. Logs in to DockerHub (using repository secrets)
-3. Builds and pushes the Docker image with two tags:
-   - `automarket/automarket-<service>:latest`
-   - `automarket/automarket-<service>:<commit-sha>`
+This is the quality gate. The image builds pass `-DskipTests`, so without this job
+no test source is ever compiled, let alone run. The tests use Testcontainers, which
+needs a Docker daemon — `ubuntu-latest` provides one.
 
-### Frontend CI (`automarket2-FE/.github/workflows/ci.yml`)
+`./mvnw` is the committed Maven wrapper (`only-script` distribution, so there is no
+jar in the repo), pinning Maven 3.9.9 for local, CI and image builds alike.
 
-Triggers on push to `main` or `master`. Single job that builds and pushes:
-- `automarket/automarket-frontend:latest`
-- `automarket/automarket-frontend:<commit-sha>`
+**2. `images` — build every service image**
+
+Runs only if `verify` passed. Builds all seven Dockerfiles with `--output
+type=cacheonly`: the images are **not pushed anywhere**, because nothing consumes a
+registry copy — see below. The job exists to prove the Dockerfiles are valid, which
+they had stopped being.
+
+It is deliberately **one job rather than a matrix**. Each Dockerfile mounts a
+`/root/.m2` BuildKit cache that is shared across builds on the same builder, so only
+the first image pays for dependency resolution. A matrix gives every service its own
+builder and re-downloads everything seven times.
+
+### Deployment model: local build, no registry
+
+There is no CD stage, and that is now explicit rather than accidental. Every
+manifest sets `imagePullPolicy: Never`, and `k8s/deploy.sh` builds the images
+locally and loads them with `k3d image import`. A registry push was previously part
+of CI but no deployment ever pulled from it, so the `:<commit-sha>` tags — the only
+thing that would make a deploy reproducible — were written and never read.
+
+Consequences worth stating plainly:
+
+- Deploying requires a local Docker daemon and the repo. There is no "promote this
+  build" step.
+- `:latest` is whatever was last built on that machine.
+- Argo CD was removed (commit `fcd9b6d`); `k8s/argocd/` is left for reference.
+
+Moving to registry-based deploys later means: push on CI, tag the manifests with the
+sha, and switch `imagePullPolicy` to `IfNotPresent`.
+
+The `verify` job also uploads Surefire XML reports as an artifact, so a failure can be
+read without re-running the build locally.
+
+### Frontend CI
+
+The frontend repository currently has **no CI workflow** — there is no `.github/`
+directory in it. Its image is built only by `k8s/deploy.sh`, from local sources.
+
+Adding one means: `npm ci`, `npm run build:prod`, and a `docker build`. There is no
+reason to push it to a registry until the backend does the same (see below).
 
 ### Required GitHub Secrets
 
-Both repositories need these secrets configured:
-- `DOCKERHUB_USERNAME` — DockerHub username
-- `DOCKERHUB_TOKEN` — DockerHub access token
+**None.** The backend workflow pushes nothing, and there is no frontend workflow.
 
 ## 6. Kubernetes Manifests
 
@@ -203,18 +300,21 @@ k8s/
 │   ├── postgres-service.yml               # Headless service (clusterIP: None)
 │   ├── redis-deployment.yml
 │   ├── redis-service.yml
-│   ├── rabbitmq-deployment.yml
-│   ├── rabbitmq-service.yml
+│   ├── kafka-statefulset.yml               # Single-node KRaft broker
+│   ├── kafka-service.yml
 │   ├── mailhog-deployment.yml
 │   ├── mailhog-service.yml
 │   ├── prometheus-configmap.yml            # Scrape config for Spring Boot services
+│   ├── prometheus-rules-configmap.yml      # Alerting rules
 │   ├── prometheus-deployment.yml
 │   ├── prometheus-service.yml
 │   ├── grafana-datasources.yml             # Auto-provision Prometheus datasource
+│   ├── grafana-dashboards-configmap.yml
 │   ├── grafana-deployment.yml
 │   └── grafana-service.yml
 ├── services/
-│   ├── uploads-pvc.yml                    # Shared PVC for file uploads
+│   ├── uploads-pvc.yml                    # Shared PVC for listing uploads
+│   ├── blog-uploads-pvc.yml               # Separate PVC for blog uploads
 │   ├── frontend-deployment.yml
 │   ├── frontend-service.yml
 │   ├── gateway-deployment.yml
@@ -227,34 +327,45 @@ k8s/
 │   ├── blog-service-service.yml
 │   ├── inquiry-service-deployment.yml
 │   ├── inquiry-service-service.yml
-│   ├── reference-service-deployment.yml
-│   ├── reference-service-service.yml
 │   ├── payment-service-deployment.yml
 │   ├── payment-service-service.yml
 │   ├── notification-service-deployment.yml
 │   └── notification-service-service.yml
 ├── ingress.yml                            # Nginx Ingress for automarket.local
+├── autoscaling.yml                        # HPAs + PodDisruptionBudgets
+├── networkpolicy.yml                      # Opt-in traffic restrictions
 ├── deploy.sh                              # Deployment script
-└── argocd/
-    ├── install.yml                        # Argo CD namespace
-    └── application.yml                    # Argo CD Application (GitOps)
+└── argocd/                                # Unused — kept for reference only
+    ├── install.yml
+    └── application.yml
 ```
+
+`secret.yml` is gitignored. Copy `secret.yml.example` to `secret.yml` and fill in
+`DB_PASSWORD`, `JWT_SECRET`, `GATEWAY_SHARED_SECRET`, the Stripe keys, and
+`RESEND_API_KEY` (only needed if `MAIL_PROVIDER` is switched to `resend`).
 
 ### 6.1 ConfigMap & Secret
 
 **ConfigMap** (`automarket-config`) holds all non-sensitive configuration:
 - Database URL and username
 - Redis host/port
-- RabbitMQ host/port/username
-- Mail server settings
-- Storage configuration
+- `KAFKA_BOOTSTRAP_SERVERS` — the StatefulSet pod DNS name,
+  `kafka-0.kafka.automarket.svc.cluster.local:9092`
+- Mail server settings (`MAIL_PROVIDER: smtp` → MailHog)
+- Storage configuration (`STORAGE_PROVIDER: local`, uploads at `/app/uploads`)
+- `FRONTEND_URL: http://automarket.local` — also the gateway's allowed CORS origin
 - Inter-service URLs (e.g., `AUTH_SERVICE_URL=http://auth-service:8081`)
 
 **Secret** (`automarket-secret`) holds sensitive values using `stringData`:
 - `DB_PASSWORD`
 - `JWT_SECRET`
-- `RABBITMQ_PASSWORD`
+- `GATEWAY_SHARED_SECRET` — without this the `X-User-*` headers are self-asserted and
+  any pod that can reach a service port could claim `ROLE_ADMIN`
+- `RESEND_API_KEY`
 - `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`
+
+Every Deployment pulls both in wholesale via `envFrom`, so adding a variable means
+editing one ConfigMap rather than eight manifests.
 
 ### 6.2 PostgreSQL StatefulSet
 
@@ -269,30 +380,45 @@ PostgreSQL uses a **StatefulSet** (not a Deployment) for stable storage:
 
 ### 6.3 Application Deployments & Services
 
-All 9 application services (8 BE + 1 FE) follow this pattern:
+All 8 application services (7 BE + 1 FE) follow this pattern:
 
 | Service | Image | Port | Extra |
 |---------|-------|------|-------|
-| frontend | automarket/automarket-frontend | 80 | Probe on `/health` |
+| frontend | automarket/automarket-frontend | 80 | Probe on `/health`; 32Mi/10m requests |
 | gateway | automarket/automarket-gateway | 8080 | Explicit service URL env vars |
 | auth-service | automarket/automarket-auth-service | 8081 | — |
 | listing-service | automarket/automarket-listing-service | 8082 | Mounts uploads PVC |
-| blog-service | automarket/automarket-blog-service | 8083 | Mounts uploads PVC |
+| blog-service | automarket/automarket-blog-service | 8083 | Mounts blog-uploads PVC |
 | inquiry-service | automarket/automarket-inquiry-service | 8084 | — |
-| reference-service | automarket/automarket-reference-service | 8085 | — |
 | payment-service | automarket/automarket-payment-service | 8086 | — |
-| notification-service | automarket/automarket-notification-service | 8087 | — |
+| notification-service | automarket/automarket-notification-service | 8087 | No DB |
 
 Each backend Deployment:
-- 1 replica
+- 1 replica baseline, scaled by an HPA (§6.5)
+- `imagePullPolicy: Never` — images are built locally and k3d-imported, never pulled
 - `envFrom` referencing both `automarket-config` (ConfigMap) and `automarket-secret` (Secret)
-- Readiness probe: `/actuator/health`, initialDelay 30s
-- Liveness probe: `/actuator/health`, initialDelay 60s
 - Resources: requests 256Mi/100m, limits 512Mi/500m
+
+**Three probes, not two.** A JVM with Flyway migrations can take well over a minute to
+come up, and a liveness probe with a generous `initialDelaySeconds` is a bad way to cover
+that — it either fires too early during a slow start or reacts too slowly to a genuine
+hang afterwards.
+
+- `startupProbe`: `/actuator/health`, `failureThreshold: 30` × `periodSeconds: 10` —
+  up to five minutes to boot. Liveness does not run until it passes.
+- `readinessProbe`: `/actuator/health` every 10s — gates traffic.
+- `livenessProbe`: `/actuator/health`, 15s period, 3 failures — restarts a wedged pod.
+
+**Graceful shutdown** is wired end to end: each service sets
+`server.shutdown: graceful` and `spring.lifecycle.timeout-per-shutdown-phase: 30s`, and
+each pod sets `terminationGracePeriodSeconds: 45` so the JVM finishes in-flight requests
+before SIGKILL. The rolling update strategy is `maxUnavailable: 0, maxSurge: 1`, because
+at one replica the default (25% → 1) leaves a gap with no pod serving.
 
 ### 6.4 Ingress
 
-Uses the Nginx Ingress controller (Minikube addon):
+Uses the Nginx Ingress controller, installed by `deploy.sh` (k3d's bundled Traefik is
+disabled at cluster creation so the two do not fight over ports 80/443):
 
 ```yaml
 spec:
@@ -308,52 +434,89 @@ spec:
 
 Annotation `proxy-body-size: 50m` for file uploads.
 
-### 6.5 Argo CD (Continuous Deployment)
+Note that `/api` and `/uploads` are routed to the gateway by the Ingress itself, so they
+never reach the frontend's Nginx. Only `/` does.
 
-Argo CD provides GitOps-based continuous deployment. When manifests in the `k8s/` directory are updated in Git, Argo CD automatically syncs the changes to the cluster.
+### 6.5 Autoscaling and Disruption Budgets
 
-**How it works:**
-1. The deploy script installs Argo CD on the Minikube cluster
-2. An `Application` resource points to the `k8s/` directory in the GitHub repo
-3. Argo CD watches for changes and auto-syncs with `prune` and `selfHeal` enabled
+`k8s/autoscaling.yml` adds an HPA and a PodDisruptionBudget per workload. Before it,
+every workload sat at `replicas: 1` with neither, so any node drain or rolling update
+was a full outage for that service and load could not be absorbed at all.
 
-**Application manifest** (`k8s/argocd/application.yml`):
-- Source: `https://github.com/Dkostoski30/automarket2-be.git` (branch: `feature/microservice-migration`, path: `k8s/`)
-- Destination: `automarket` namespace on the local cluster
-- Sync policy: automated with pruning and self-healing
-- Excludes: `argocd/*` and `deploy.sh` (to avoid circular management)
+**HPAs** scale 1→3 on CPU at 75% utilization. CPU is a weak signal for services that are
+I/O bound on Postgres and Kafka, but it is the only one available without a custom
+metrics adapter. Scale-down uses a 300s stabilization window against a 60s scale-up
+window: a JVM needs ~30s to warm up, so flapping costs more than holding a spare pod for
+five minutes. HPAs need metrics-server, which k3s ships by default.
 
-**Accessing the Argo CD UI:**
+**PDBs** use `maxUnavailable: 1` rather than `minAvailable: 1`, deliberately. At one
+replica a `minAvailable` of 1 blocks every voluntary eviction, so the node can never be
+drained. `maxUnavailable: 1` does permit losing the only pod, but once the HPA has scaled
+out it guarantees they are not all taken at once — the case that actually matters during
+a cluster upgrade.
+
+### 6.6 Network Policies (opt-in)
+
+`k8s/networkpolicy.yml` restricts backend services to traffic from the gateway and
+Prometheus. It is **off by default**:
+
 ```bash
-kubectl port-forward svc/argocd-server -n argocd 9090:443
-# Open https://localhost:9090
-# Username: admin
-# Password: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+APPLY_NETWORK_POLICIES=1 bash k8s/deploy.sh
 ```
 
-### 6.6 Deployment Script
+NetworkPolicy enforcement depends on the CNI, and if the kubelet's probes get caught by
+a policy every pod fails readiness at once — a confusing way to lose a demo. Turn it on
+deliberately and confirm pods stay ready. The shared-secret check in `GatewayAuthFilter`
+is the actual authorization control; this is defence in depth on top of it.
+
+### 6.7 Deployment Script
 
 `k8s/deploy.sh` automates the full deployment using **k3d** (k3s-in-Docker):
 
-1. Creates a k3d cluster with port 80/443 mapped to localhost
-2. Installs the nginx ingress controller
-3. Builds Docker images locally and imports them into the k3d cluster
-4. Applies manifests in order: namespace → config/secrets → infrastructure → waits for infra readiness → application services → ingress
-5. Installs Argo CD and creates the Application resource for GitOps
-6. Prints hosts file instructions and Argo CD credentials
+1. Creates a k3d cluster with ports 80/443 mapped to localhost, Traefik disabled
+2. Rewrites `host.docker.internal` to `127.0.0.1` in the kubeconfig — on Windows that
+   name often does not resolve, and without the fix every `kubectl` call fails
+3. Installs the nginx ingress controller
+4. Builds the seven backend images plus the frontend, then `k3d image import`s them.
+   The frontend repo is located at `$HOME/WebstormProjects/automarket2-FE`, overridable
+   with `FE_DIR`; if it is missing, the frontend build is skipped with a warning
+5. Applies manifests in order: namespace → config/secrets → infrastructure → waits for
+   postgres/redis/kafka readiness → application services → ingress → autoscaling
+6. Optionally applies network policies (§6.6)
+7. Prints hosts-file instructions and the monitoring port-forward commands
 
-### 6.7 Monitoring (Prometheus + Grafana)
+It is idempotent: re-running against an existing cluster reuses it and re-applies.
+
+### 6.8 Monitoring (Prometheus + Grafana)
 
 Prometheus scrapes metrics from all Spring Boot services via their `/actuator/prometheus` endpoint. Grafana provides dashboards with Prometheus as a pre-configured datasource.
 
 **Prometheus** (`prom/prometheus:v2.53.0`):
-- ConfigMap `prometheus-config` defines scrape targets for all 8 backend services
-- Scrapes every 10 seconds from `/actuator/prometheus`
+- ConfigMap `prometheus-config` scrapes all seven backend services (auth, listing, blog,
+  inquiry, payment, notification, gateway) every 10 seconds
+- `prometheus-rules-configmap.yml` supplies alerting rules, mounted at
+  `/etc/prometheus/rules/`
 - 7-day data retention
 - Accessible inside the cluster at `prometheus:9090`
 
+**Alerting rules** cover the failure modes this architecture actually has:
+
+| Alert | Condition |
+|---|---|
+| `OutboxRelayStalled` | `automarket_outbox_oldest_pending_seconds > 120` |
+| `OutboxBacklogGrowing` | `automarket_outbox_pending > 500` |
+| `DeadLetteredRecords` | any increase in `automarket_dlt_records_total` over 10m |
+| `KafkaConsumerLagGrowing` | `kafka_consumer_fetch_manager_records_lag_max > 1000` |
+| `ServiceDown` | `up == 0` |
+| `HighServerErrorRate` | sustained 5xx rate |
+
+The first three are the ones worth watching: a stalled outbox relay means writes are
+committing to Postgres but the corresponding events never reach Kafka, which is silent
+until someone notices a projection is stale.
+
 **Grafana** (`grafana/grafana:11.1.0`):
 - Auto-provisions Prometheus as default datasource via `grafana-datasources` ConfigMap
+- Dashboards provisioned from `grafana-dashboards-configmap.yml`
 - Default credentials: `admin` / `admin`
 - Accessible inside the cluster at `grafana:3000`
 
@@ -368,14 +531,16 @@ kubectl -n automarket port-forward svc/grafana 3000:3000
 # Open http://localhost:3000 (admin/admin)
 ```
 
-> **Note**: For the Spring Boot services to expose Prometheus metrics, they need the `micrometer-registry-prometheus` dependency and `management.endpoints.web.exposure.include=prometheus` in their configuration.
+The services already carry `micrometer-registry-prometheus` and expose `prometheus` via
+`management.endpoints.web.exposure.include`, so no extra configuration is needed.
 
 ## 7. Deploying with k3d
 
-**Prerequisites:** Docker Desktop and [k3d](https://k3d.io/) installed.
+**Prerequisites:** Docker Desktop and [k3d](https://k3d.io/) installed, and
+`k8s/secret.yml` created from `secret.yml.example`.
 
 ```bash
-# Run the deployment script
+# Run the deployment script (first run builds 8 images — allow 10+ minutes)
 bash k8s/deploy.sh
 
 # Add to hosts file
@@ -405,7 +570,7 @@ k3d cluster delete automarket
 NAME                                    READY   STATUS    RESTARTS
 postgres-0                              1/1     Running   0
 redis-xxxxx                             1/1     Running   0
-rabbitmq-xxxxx                          1/1     Running   0
+kafka-0                                 1/1     Running   0
 mailhog-xxxxx                           1/1     Running   0
 auth-service-xxxxx                      1/1     Running   0
 listing-service-xxxxx                   1/1     Running   0

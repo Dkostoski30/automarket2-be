@@ -1,7 +1,16 @@
 server:
   port: 8084
 
+  # Finish in-flight requests instead of dropping them when the pod gets SIGTERM.
+  # Without this a rolling update returns connection resets, and a Kafka listener
+  # can be killed mid-batch — safe for the idempotent projections, but it leaves
+  # auth-service's subscription consumer leaning on its inbox table for what should
+  # be an orderly stop.
+  shutdown: graceful
 spring:
+  lifecycle:
+    # Must stay below the pod's terminationGracePeriodSeconds (45s).
+    timeout-per-shutdown-phase: 30s
   application:
     name: inquiry-service
   config:
@@ -31,6 +40,10 @@ spring:
     baseline-version: 0
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    template:
+      # Carries the trace context into the Kafka headers, so a
+      # consumer's log lines share the producer's trace id.
+      observation-enabled: true
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
@@ -51,8 +64,22 @@ spring:
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       enable-auto-commit: false
     listener:
+      observation-enabled: true
       ack-mode: record
+automarket:
+  gateway:
+    # Proves to each service that a request came through the gateway, which is the
+    # only component that validates a JWT. Without it the X-User-* headers are
+    # self-asserted and any pod could claim ROLE_ADMIN.
+    shared-secret: ${GATEWAY_SHARED_SECRET:dev-insecure-gateway-secret}
+
 management:
+  tracing:
+    sampling:
+      # Sample everything. There is no exporter, so a span costs a MDC entry and
+      # nothing else — and a trace id that exists on only 10% of requests is worse
+      # than useless when chasing one registration through five projections.
+      probability: 1.0
   endpoints:
     web:
       exposure:

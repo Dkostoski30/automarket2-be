@@ -1,0 +1,40 @@
+# Build context for every service image.
+#
+# Each Dockerfile does a single `COPY . .`, so this file — not a
+# hand-maintained list of module paths inside seven Dockerfiles — decides
+# what the build sees. Adding a Maven module therefore needs no Dockerfile
+# change, which is what broke the build when automarket-messaging was added.
+#
+# Anything the Maven build needs (pom.xml, */pom.xml, */src) must stay.
+
+# ── VCS, IDE, agent config ───────────────────────────────────────
+.git
+.gitignore
+.gitattributes
+.github
+.idea
+.vscode
+.claude
+claude-prompts
+*.iml
+
+# ── Build output — stale classes must not shadow a fresh build ───
+**/target
+
+# ── Secrets and local state ──────────────────────────────────────
+.env
+.env.local
+uploads
+k8s/secret.yml
+
+# ── Deployment, docs, fixtures — not build inputs ────────────────
+k8s
+docker-compose.yml
+Dockerfile
+**/Dockerfile
+*.md
+*.pdf
+prometheus.yml
+grafana-datasources.yml
+seed.sql
+mock_data

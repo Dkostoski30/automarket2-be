@@ -1,33 +1,19 @@
-# -- Stage 1: Build ----------------------------------------------------------
+# ── Stage 1: Build ──────────────────────────────────────────────
 FROM maven:3.9-eclipse-temurin-21-alpine AS build
 WORKDIR /app
 
-COPY pom.xml ./pom.xml
-COPY automarket-common/pom.xml ./automarket-common/pom.xml
-COPY automarket-security-common/pom.xml ./automarket-security-common/pom.xml
-COPY automarket-storage/pom.xml ./automarket-storage/pom.xml
-COPY automarket-events/pom.xml ./automarket-events/pom.xml
-COPY gateway/pom.xml ./gateway/pom.xml
-COPY auth-service/pom.xml ./auth-service/pom.xml
-COPY listing-service/pom.xml ./listing-service/pom.xml
-COPY blog-service/pom.xml ./blog-service/pom.xml
-COPY inquiry-service/pom.xml ./inquiry-service/pom.xml
-COPY payment-service/pom.xml ./payment-service/pom.xml
-COPY notification-service/pom.xml ./notification-service/pom.xml
+# The whole reactor is copied in one step. Listing module paths here instead
+# meant every new Maven module silently broke the build — the parent pom
+# declares it, Maven fails loading the reactor, and no image builds.
+# .dockerignore keeps the context small; the /root/.m2 cache mount below is
+# what keeps dependency downloads off the critical path.
+COPY . .
 
-RUN --mount=type=cache,target=/root/.m2 \
-    mvn dependency:go-offline -pl auth-service -am -B 2>/dev/null || true
-
-COPY automarket-common/src ./automarket-common/src
-COPY automarket-security-common/src ./automarket-security-common/src
-COPY automarket-events/src ./automarket-events/src
-COPY auth-service/src ./auth-service/src
-
-RUN --mount=type=cache,target=/root/.m2 \
+RUN --mount=type=cache,target=/root/.m2,sharing=locked \
     mvn package -pl auth-service -am -DskipTests -B && \
     java -Djarmode=layertools -jar auth-service/target/*.jar extract --destination auth-service/target/extracted
 
-# -- Stage 2: Runtime -------------------------------------------------------
+# ── Stage 2: Runtime ────────────────────────────────────────────
 FROM eclipse-temurin:21-jre-alpine AS runtime
 WORKDIR /app
 

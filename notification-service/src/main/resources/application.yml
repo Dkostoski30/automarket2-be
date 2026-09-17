@@ -1,7 +1,16 @@
 server:
   port: 8087
 
+  # Finish in-flight requests instead of dropping them when the pod gets SIGTERM.
+  # Without this a rolling update returns connection resets, and a Kafka listener
+  # can be killed mid-batch — safe for the idempotent projections, but it leaves
+  # auth-service's subscription consumer leaning on its inbox table for what should
+  # be an orderly stop.
+  shutdown: graceful
 spring:
+  lifecycle:
+    # Must stay below the pod's terminationGracePeriodSeconds (45s).
+    timeout-per-shutdown-phase: 30s
   application:
     name: notification-service
 
@@ -10,6 +19,10 @@ spring:
 
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    template:
+      # Carries the trace context into the Kafka headers, so a
+      # consumer's log lines share the producer's trace id.
+      observation-enabled: true
     producer:
       # Needed by the dead-letter publisher in KafkaConfig.
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
@@ -28,6 +41,7 @@ spring:
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       enable-auto-commit: false
     listener:
+      observation-enabled: true
       ack-mode: record
       concurrency: 2
   mail:
@@ -41,12 +55,22 @@ spring:
 
 automarket:
   mail:
+    # smtp = MailHog (dev default) | resend = Resend HTTP API (placeholder, sends nothing yet)
+    provider: ${MAIL_PROVIDER:smtp}
     from: ${MAIL_FROM:noreply@automarket.com}
+    resend:
+      api-key: ${RESEND_API_KEY:}
   frontend:
     base-url: ${FRONTEND_URL:http://localhost:4200}
 
 # Actuator
 management:
+  tracing:
+    sampling:
+      # Sample everything. There is no exporter, so a span costs a MDC entry and
+      # nothing else — and a trace id that exists on only 10% of requests is worse
+      # than useless when chasing one registration through five projections.
+      probability: 1.0
   endpoints:
     web:
       exposure:

@@ -1,21 +1,23 @@
 package com.automarket.notification.service;
 
+import com.automarket.notification.mail.MailSender;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 
+/**
+ * Composes the transactional messages the service sends.
+ *
+ * <p>Body text and addressing live here; handing the message to a provider is
+ * the {@link MailSender} implementation's job.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class EmailNotificationService {
 
-    private final JavaMailSender mailSender;
-
-    @Value("${automarket.mail.from:noreply@automarket.com}")
-    private String fromAddress;
+    private final MailSender mailSender;
 
     @Value("${automarket.frontend.base-url:http://localhost:4200}")
     private String frontendBaseUrl;
@@ -49,16 +51,6 @@ public class EmailNotificationService {
     }
 
     private void sendSimple(String to, String subject, String text) {
-        try {
-            SimpleMailMessage message = new SimpleMailMessage();
-            message.setFrom(fromAddress);
-            message.setTo(to);
-            message.setSubject(subject);
-            message.setText(text);
-            mailSender.send(message);
-            log.debug("Email sent to {}: {}", to, subject);
-        } catch (Exception e) {
-            log.error("Failed to send email to {}: {}", to, e.getMessage());
-        }
+        mailSender.send(to, subject, text);
     }
 }

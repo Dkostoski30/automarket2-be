@@ -53,6 +53,38 @@ public class KafkaConfig {
     }
 
     /**
+     * The dead-letter topics the recoverer below publishes to.
+     *
+     * <p>Declared explicitly rather than left to broker auto-creation, for two
+     * reasons: the partition count matches the source topics instead of defaulting
+     * to one, and the topics exist before anything fails — so the monitor can
+     * subscribe on a healthy cluster rather than at the worst possible moment.
+     */
+    @Bean
+    public NewTopic userEventsDltTopic() {
+        return TopicBuilder.name(KafkaTopics.USER_EVENTS_DLT)
+                .partitions(PARTITIONS).replicas(REPLICAS).build();
+    }
+
+    @Bean
+    public NewTopic listingEventsDltTopic() {
+        return TopicBuilder.name(KafkaTopics.LISTING_EVENTS_DLT)
+                .partitions(PARTITIONS).replicas(REPLICAS).build();
+    }
+
+    @Bean
+    public NewTopic inquiryEventsDltTopic() {
+        return TopicBuilder.name(KafkaTopics.INQUIRY_EVENTS_DLT)
+                .partitions(PARTITIONS).replicas(REPLICAS).build();
+    }
+
+    @Bean
+    public NewTopic subscriptionEventsDltTopic() {
+        return TopicBuilder.name(KafkaTopics.SUBSCRIPTION_EVENTS_DLT)
+                .partitions(PARTITIONS).replicas(REPLICAS).build();
+    }
+
+    /**
      * Retries a failing record three times with a 2s backoff, then publishes it to
      * "<topic>-dlt" instead of discarding it.
      *
