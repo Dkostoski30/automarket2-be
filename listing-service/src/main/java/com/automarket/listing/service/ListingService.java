@@ -42,6 +42,7 @@ public class ListingService {
     private final BodyTypeRepository bodyTypeRepository;
     private final ConditionTypeRepository conditionTypeRepository;
     private final TransmissionTypeRepository transmissionTypeRepository;
+    private final CityRepository cityRepository;
     private final StorageService storageService;
 
     @Value("${automarket.listings.max-per-free-user:3}")
@@ -54,7 +55,9 @@ public class ListingService {
     public PageResponse<ListingDto> browse(ListingFilterRequest filter, int page, int size) {
         Sort sort = buildSort(filter);
         Pageable pageable = PageRequest.of(page, size, sort);
-        var spec = ListingSpecification.fromFilter(filter, true);
+        String sellerCityName = (filter == null || filter.cityId() == null) ? null
+                : cityRepository.findById(filter.cityId()).map(City::getName).orElse(null);
+        var spec = ListingSpecification.fromFilter(filter, true, sellerCityName);
         Page<Listing> results = listingRepository.findAll(spec, pageable);
         return PageResponse.from(results, this::toListingDto);
     }

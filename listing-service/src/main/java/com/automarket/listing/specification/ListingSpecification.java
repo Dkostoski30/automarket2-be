@@ -9,12 +9,20 @@ import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 public final class ListingSpecification {
 
     private ListingSpecification() {}
 
-    public static Specification<Listing> fromFilter(ListingFilterRequest filter, boolean approvedOnly) {
+    /**
+     * @param sellerCityName resolved from {@code filter.cityId()} by the caller - the seller's city
+     *                       lives on {@link com.automarket.listing.entity.UserView} as a denormalised
+     *                       name, so it cannot be joined by id here. Null when the id matched no city,
+     *                       which narrows the result to nothing rather than ignoring the filter.
+     */
+    public static Specification<Listing> fromFilter(ListingFilterRequest filter, boolean approvedOnly,
+                                                   String sellerCityName) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
 
@@ -82,7 +90,10 @@ public final class ListingSpecification {
             }
 
             if (filter.cityId() != null) {
-                predicates.add(cb.equal(root.get("seller").get("city").get("id"), filter.cityId()));
+                predicates.add(sellerCityName == null
+                        ? cb.disjunction()
+                        : cb.equal(cb.lower(root.get("seller").get("cityName")),
+                                   sellerCityName.toLowerCase(Locale.ROOT)));
             }
 
             if (Boolean.TRUE.equals(filter.featured())) {
