@@ -91,8 +91,11 @@ ALTER TABLE public.flyway_history_blog SET SCHEMA blog;
 
 -- ── inquiry-service ─────────────────────────────────────────────────────────
 ALTER TABLE public.inquiries              SET SCHEMA inquiry;
-ALTER TABLE public.conversations          SET SCHEMA inquiry;
-ALTER TABLE public.messages               SET SCHEMA inquiry;
+-- Created by inquiry's V5__conversations. A database cut over before V5 ran has
+-- neither; V5 then creates them in the inquiry schema on the next start, from
+-- the inquiries table moved above.
+ALTER TABLE IF EXISTS public.conversations SET SCHEMA inquiry;
+ALTER TABLE IF EXISTS public.messages      SET SCHEMA inquiry;
 ALTER TABLE public.inquiry_user_view      SET SCHEMA inquiry;
 ALTER TABLE public.inquiry_listing_view   SET SCHEMA inquiry;
 ALTER TABLE public.flyway_history_inquiry SET SCHEMA inquiry;
@@ -154,7 +157,10 @@ DECLARE leftover TEXT;
 BEGIN
     SELECT string_agg(table_name, ', ') INTO leftover
       FROM information_schema.tables
-     WHERE table_schema = 'public' AND table_type = 'BASE TABLE';
+     WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+       -- The decommissioned monolith's history. No service reads it; it stays
+       -- where it is rather than being dropped.
+       AND table_name <> 'flyway_schema_history';
     IF leftover IS NOT NULL THEN
         RAISE EXCEPTION 'Tables still in public after the move: %. Nothing was changed.', leftover;
     END IF;

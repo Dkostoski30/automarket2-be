@@ -22,7 +22,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: mc
-          image: minio/mc:RELEASE.2024-06-12T14-34-03Z
+          image: quay.io/minio/mc:RELEASE.2024-06-12T14-34-03Z
           env:
             - name: S3_ACCESS_KEY
               valueFrom:

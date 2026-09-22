@@ -79,7 +79,7 @@ services:
   # endpoint. Console → http://localhost:9001 (minioadmin/minioadmin)
   # ──────────────────────────────────────────
   minio:
-    image: minio/minio:RELEASE.2024-06-13T22-53-53Z
+    image: quay.io/minio/minio:RELEASE.2024-06-13T22-53-53Z
     restart: unless-stopped
     mem_limit: 512m
     command: server /data --console-address ":9001"
@@ -101,7 +101,7 @@ services:
   # without presigned URLs. Runs once and exits; that is why it has no restart
   # policy and nothing depends_on its completion beyond the healthcheck above.
   minio-init:
-    image: minio/mc:RELEASE.2024-06-12T14-34-03Z
+    image: quay.io/minio/mc:RELEASE.2024-06-12T14-34-03Z
     depends_on:
       minio:
         condition: service_healthy
@@ -120,7 +120,7 @@ services:
   # Storage keys were paths under /app/uploads and are the S3 keys unchanged,
   # so image URLs already in the database keep working.
   uploads-migrate:
-    image: minio/mc:RELEASE.2024-06-12T14-34-03Z
+    image: quay.io/minio/mc:RELEASE.2024-06-12T14-34-03Z
     depends_on:
       minio-init:
         condition: service_completed_successfully
