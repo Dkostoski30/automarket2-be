@@ -1,5 +1,6 @@
 package com.automarket.auth.controller;
 
+import com.automarket.auth.dto.ChangePasswordRequest;
 import com.automarket.auth.dto.UpdateProfileRequest;
 import com.automarket.auth.dto.UserDto;
 import com.automarket.auth.dto.UserProfileDto;
@@ -13,7 +14,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -49,12 +49,8 @@ public class UserController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @SecurityRequirement(name = "bearerAuth")
     @Operation(summary = "Change current user's password")
-    public void changePassword(@RequestBody Map<String, String> body,
+    public void changePassword(@Valid @RequestBody ChangePasswordRequest request,
                                @AuthenticationPrincipal String email) {
-        userService.changePassword(
-                email,
-                body.get("currentPassword"),
-                body.get("newPassword")
-        );
+        userService.changePassword(email, request.currentPassword(), request.newPassword());
     }
 }

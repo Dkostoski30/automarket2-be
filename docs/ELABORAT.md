@@ -201,9 +201,12 @@ API Gateway-от (Spring Cloud Gateway) е единствената влезна
 
 | Метод | Патека | Опис |
 |---|---|---|
-| POST | `/api/v1/inquiries` | Испраќање порака до продавач |
-| GET | `/api/v1/inquiries/received\|sent` | Примени/испратени пораки (пагинирано) |
-| PUT | `/api/v1/inquiries/{id}/read` | Означи порака како прочитана |
+| POST | `/api/v1/inquiries` | Започнување разговор со продавач од оглас |
+| GET | `/api/v1/conversations` | Разговори на корисникот (пагинирано) |
+| GET | `/api/v1/conversations/unread-count` | Број непрочитани пораки |
+| GET | `/api/v1/conversations/{id}` | Еден разговор со пораките (пагинирано) |
+| POST | `/api/v1/conversations/{id}/messages` | Одговор во разговор |
+| POST | `/api/v1/conversations/{id}/read` | Означи го разговорот како прочитан |
 
 ### 4.5 Payment Service (порт 8086)
 

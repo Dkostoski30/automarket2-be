@@ -43,7 +43,19 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/auth/**").permitAll()
-                        .requestMatchers("/api/v1/users/{id}").permitAll()
+                        // Order matters, and this pair has to stay in this order: the
+                        // public-profile pattern below is a single path variable, so it
+                        // also matches the literal "me". With only that rule every method
+                        // on /users/me was permitAll here, so a request whose identity
+                        // headers the gateway filter dropped reached the controller
+                        // anonymously and came back 404 "User not found" — an
+                        // authentication failure wearing a data error's status code.
+                        // It is now a 403, which says what actually went wrong. The
+                        // gateway still rejects a missing or invalid JWT with a 401
+                        // before anything reaches this service, so a 403 here means
+                        // specifically that the X-Gateway-Auth secret did not match.
+                        .requestMatchers("/api/v1/users/me", "/api/v1/users/me/**").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/users/{id}").permitAll()
                         .requestMatchers("/api/v1/webhooks/**").permitAll()
                         // Health for the kubelet, prometheus for the scraper. Both
                         // were reachable only with credentials before, so every scrape

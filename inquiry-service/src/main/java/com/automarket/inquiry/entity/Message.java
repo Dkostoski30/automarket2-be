@@ -6,31 +6,33 @@ import lombok.*;
 import java.time.Instant;
 import java.util.UUID;
 
+/**
+ * One message in a {@link Conversation}, from either participant.
+ *
+ * <p>Messages migrated from the old {@code inquiries} table keep their original id
+ * (see V5__conversations.sql).
+ */
 @Entity
-@Table(name = "inquiries")
+@Table(name = "messages")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class Inquiry {
+public class Message {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(name = "listing_id", nullable = false)
-    private UUID listingId;
+    @Column(name = "conversation_id", nullable = false)
+    private UUID conversationId;
 
     @Column(name = "sender_id", nullable = false)
     private UUID senderId;
 
     @Column(nullable = false, columnDefinition = "TEXT")
-    private String message;
-
-    @Column(name = "read_by_seller", nullable = false)
-    @Builder.Default
-    private boolean readBySeller = false;
+    private String body;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     @Builder.Default

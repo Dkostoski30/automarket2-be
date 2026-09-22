@@ -96,6 +96,10 @@ public final class ListingSpecification {
                                    sellerCityName.toLowerCase(Locale.ROOT)));
             }
 
+            if (filter.sellerId() != null) {
+                predicates.add(cb.equal(root.get("seller").get("id"), filter.sellerId()));
+            }
+
             if (Boolean.TRUE.equals(filter.featured())) {
                 predicates.add(cb.isTrue(root.get("featured")));
             }

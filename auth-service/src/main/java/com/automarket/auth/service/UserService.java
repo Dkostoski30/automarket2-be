@@ -7,6 +7,7 @@ import com.automarket.auth.dto.UserSummaryDto;
 import com.automarket.auth.entity.CityView;
 import com.automarket.auth.entity.User;
 import com.automarket.auth.repository.CityViewRepository;
+import com.automarket.auth.repository.ListingViewRepository;
 import com.automarket.auth.repository.UserRepository;
 import com.automarket.common.dto.PageResponse;
 import com.automarket.auth.entity.Role;
@@ -32,17 +33,21 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final CityViewRepository cityViewRepository;
+    private final ListingViewRepository listingViewRepository;
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final EventPublisher eventPublisher;
+    private final RefreshTokenService refreshTokenService;
 
     @Transactional(readOnly = true)
     public UserProfileDto getPublicProfile(UUID userId) {
         User user = getUserOrThrow(userId);
-        // totalListings=0 placeholder; will be replaced with Feign call to listing-service
+        // Counted from auth_listing_view, the local projection of listing-events, so a
+        // public page does not depend on listing-service answering. Was hardcoded 0.
+        long activeListings = listingViewRepository.countBySellerIdAndApprovedIsTrue(userId);
         return new UserProfileDto(user.getId(), user.getName(),
                 user.getCity() != null ? user.getCity().getName() : null,
-                user.getCreatedAt(), 0);
+                user.getCreatedAt(), (int) activeListings);
     }
 
     @Transactional(readOnly = true)
@@ -78,7 +83,13 @@ public class UserService {
         }
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         userRepository.save(user);
-        log.info("Password changed for user: {}", email);
+
+        // A password change that leaves existing refresh tokens valid does not end the
+        // sessions it was meant to end — the usual reason to change one is that another
+        // device or person should stop being logged in.
+        refreshTokenService.revokeAllUserTokens(user);
+
+        log.info("Password changed for user {}; all refresh tokens revoked", email);
     }
 
     @Transactional(readOnly = true)
@@ -136,6 +147,7 @@ public class UserService {
     private UserDto toDto(User u) {
         return new UserDto(
                 u.getId(), u.getEmail(), u.getName(), u.getPhone(),
+                u.getCity() != null ? u.getCity().getId() : null,
                 u.getCity() != null ? u.getCity().getName() : null,
                 u.getPlan(),
                 u.getRoles().stream().map(r -> r.getName().name()).collect(Collectors.toSet()),

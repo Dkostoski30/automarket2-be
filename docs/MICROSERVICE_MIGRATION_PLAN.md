@@ -759,12 +759,12 @@ services:
       POSTGRES_DB: automarket
       POSTGRES_USER: automarket
       POSTGRES_PASSWORD: secret
-    ports: ["5433:5432"]
-    volumes: [postgres_data:/var/lib/postgresql/data]
+    ports: [ "5433:5432" ]
+    volumes: [ postgres_data:/var/lib/postgresql/data ]
 
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
+    ports: [ "6379:6379" ]
 
   rabbitmq:
     image: rabbitmq:3-management-alpine
@@ -783,8 +783,8 @@ services:
 
   # API Gateway
   gateway:
-    build: ./gateway
-    ports: ["8080:8080"]
+    build: ../gateway
+    ports: [ "8080:8080" ]
     environment:
       JWT_SECRET: ${JWT_SECRET}
       AUTH_SERVICE_URL: http://auth-service:8081
@@ -793,76 +793,76 @@ services:
       INQUIRY_SERVICE_URL: http://inquiry-service:8084
       REFERENCE_SERVICE_URL: http://reference-service:8085
       PAYMENT_SERVICE_URL: http://payment-service:8086
-    depends_on: [auth-service, listing-service, blog-service, inquiry-service, reference-service, payment-service]
+    depends_on: [ auth-service, listing-service, blog-service, inquiry-service, reference-service, payment-service ]
 
   # Services
   auth-service:
-    build: ./auth-service
-    ports: ["8081:8081"]
+    build: ../auth-service
+    ports: [ "8081:8081" ]
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/automarket?currentSchema=auth_schema
       REDIS_HOST: redis
       RABBITMQ_HOST: rabbitmq
-    depends_on: [postgres, redis, rabbitmq]
+    depends_on: [ postgres, redis, rabbitmq ]
 
   listing-service:
-    build: ./listing-service
-    ports: ["8082:8082"]
+    build: ../listing-service
+    ports: [ "8082:8082" ]
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/automarket?currentSchema=listing_schema
       REDIS_HOST: redis
       RABBITMQ_HOST: rabbitmq
       AUTH_SERVICE_URL: http://auth-service:8081
       REFERENCE_SERVICE_URL: http://reference-service:8085
-    depends_on: [postgres, redis, rabbitmq]
-    volumes: [uploads_data:/app/uploads]
+    depends_on: [ postgres, redis, rabbitmq ]
+    volumes: [ uploads_data:/app/uploads ]
 
   blog-service:
-    build: ./blog-service
-    ports: ["8083:8083"]
+    build: ../blog-service
+    ports: [ "8083:8083" ]
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/automarket?currentSchema=blog_schema
       AUTH_SERVICE_URL: http://auth-service:8081
-    depends_on: [postgres]
-    volumes: [uploads_data:/app/uploads]
+    depends_on: [ postgres ]
+    volumes: [ uploads_data:/app/uploads ]
 
   inquiry-service:
-    build: ./inquiry-service
-    ports: ["8084:8084"]
+    build: ../inquiry-service
+    ports: [ "8084:8084" ]
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/automarket?currentSchema=inquiry_schema
       RABBITMQ_HOST: rabbitmq
       AUTH_SERVICE_URL: http://auth-service:8081
       LISTING_SERVICE_URL: http://listing-service:8082
-    depends_on: [postgres, rabbitmq]
+    depends_on: [ postgres, rabbitmq ]
 
   reference-service:
     build: ./reference-service
-    ports: ["8085:8085"]
+    ports: [ "8085:8085" ]
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/automarket?currentSchema=reference_schema
       REDIS_HOST: redis
-    depends_on: [postgres, redis]
+    depends_on: [ postgres, redis ]
 
   payment-service:
-    build: ./payment-service
-    ports: ["8086:8086"]
+    build: ../payment-service
+    ports: [ "8086:8086" ]
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/automarket?currentSchema=payment_schema
       RABBITMQ_HOST: rabbitmq
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
-    depends_on: [postgres, rabbitmq]
+    depends_on: [ postgres, rabbitmq ]
 
   notification-service:
-    build: ./notification-service
-    ports: ["8087:8087"]
+    build: ../notification-service
+    ports: [ "8087:8087" ]
     environment:
       RABBITMQ_HOST: rabbitmq
       MAIL_HOST: mailhog
       MAIL_PORT: 1025
       AUTH_SERVICE_URL: http://auth-service:8081
-    depends_on: [rabbitmq, mailhog]
+    depends_on: [ rabbitmq, mailhog ]
 
 volumes:
   postgres_data:

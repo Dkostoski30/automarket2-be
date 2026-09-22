@@ -191,5 +191,5 @@ Creates a k3d cluster, builds and imports every image (including the frontend, f
 manifests. Add `127.0.0.1 automarket.local` to your hosts file, then open
 http://automarket.local. Teardown: `k3d cluster delete automarket`.
 
-See [devops.md](devops.md) for the full DevOps setup: CI, manifests, autoscaling and
-monitoring. [ARCHITECTURE.md](ARCHITECTURE.md) covers service boundaries and event flows.
+See [devops.md](docs/devops.md) for the full DevOps setup: CI, manifests, autoscaling and
+monitoring. [ARCHITECTURE.md](docs/ARCHITECTURE.md) covers service boundaries and event flows.

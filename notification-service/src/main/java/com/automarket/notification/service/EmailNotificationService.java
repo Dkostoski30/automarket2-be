@@ -6,6 +6,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.UUID;
+
 /**
  * Composes the transactional messages the service sends.
  *
@@ -41,13 +43,35 @@ public class EmailNotificationService {
         );
     }
 
-    public void sendNewInquiry(String sellerEmail, String listingTitle, String senderName) {
+    public void sendNewInquiry(String sellerEmail, String listingTitle, String senderName,
+                               UUID conversationId) {
         sendSimple(
                 sellerEmail,
                 "New inquiry on your listing — AutoMarket",
                 senderName + " sent you a message about your listing \"" + listingTitle + "\".\n\n" +
-                "Log in to AutoMarket to view and respond: " + frontendBaseUrl + "/inquiries"
+                "Reply from your inbox: " + threadUrl(conversationId)
         );
+    }
+
+    /**
+     * A message in a thread that is already running. Either side can receive this —
+     * the seller answering a buyer is the same notification as the other way round.
+     */
+    public void sendConversationReply(String recipientEmail, String listingTitle, String senderName,
+                                      UUID conversationId) {
+        sendSimple(
+                recipientEmail,
+                "New reply — AutoMarket",
+                senderName + " replied to your conversation about \"" + listingTitle + "\".\n\n" +
+                "Read and reply: " + threadUrl(conversationId)
+        );
+    }
+
+    /** Deep link straight into the thread rather than the inbox it sits in. */
+    private String threadUrl(UUID conversationId) {
+        return conversationId != null
+                ? frontendBaseUrl + "/inquiries/" + conversationId
+                : frontendBaseUrl + "/inquiries";
     }
 
     private void sendSimple(String to, String subject, String text) {

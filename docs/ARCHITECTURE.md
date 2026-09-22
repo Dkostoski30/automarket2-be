@@ -37,7 +37,7 @@ Last reviewed: 2026-09-17, branch `feature/devops-setup`.
 | auth-service | 8081 | `users`, `roles`, `user_roles`, `refresh_tokens` | `cities` | user.* | ❌ none |
 | listing-service | 8082 | `cities`, `car_brands`, `body_types`, `fuel_types`, `transmission_types`, `condition_types`, `listings`, `listing_images`, `listing_analytics`, `favorites` | `users` | listing.approved/rejected | ❌ none |
 | blog-service | 8083 | `blogs` | `users` | — | ❌ none |
-| inquiry-service | 8084 | `inquiries` | `users`, `listings` | inquiry.sent | ❌ none |
+| inquiry-service | 8084 | `conversations`, `messages`, `inquiries` (archive) | `users`, `listings` | inquiry.sent, inquiry.replied | ❌ none |
 | payment-service | 8086 | `subscriptions` | `users` | subscription.* | ❌ none |
 | notification-service | 8087 | — | — | — | ✅ listing + inquiry topics |
 
@@ -70,7 +70,7 @@ schema per service (§5, Phase 3).
 | Stripe webhook → subscription row | ✅ | Fixed — finding #30 |
 | Paid plan actually upgrades the user | 💥 | **Still broken** — finding #31, needs the consumer |
 | Free-plan listing cap (3) | ✅ | Reads `users.plan` directly |
-| Seller public profile | 🟡 | `totalListings` hardcoded `0` (`ISSUES.md` #28) |
+| Seller public profile | ✅ | Counted from `auth_listing_view` — finding #28 |
 | Admin dashboard | 🟡 | Listing counts only |
 | Admin user management | ✅ | |
 | Welcome email on registration | ❌ | `user.registered` published, no handler exists |
@@ -133,7 +133,7 @@ and are consumed in publication order.
 |---|---|---|---|---|
 | `automarket.user-events` | userId | user.registered, user.disabled, user.deleted, user.plan-changed | auth | *(none yet — Phase 1)* |
 | `automarket.listing-events` | listingId | listing.approved, listing.rejected | listing | `notification-service` ✅ |
-| `automarket.inquiry-events` | inquiryId | inquiry.sent | inquiry | `notification-service` ✅ |
+| `automarket.inquiry-events` | conversationId | inquiry.sent, inquiry.replied | inquiry | `notification-service` ✅ |
 | `automarket.subscription-events` | userId | subscription.activated, subscription.cancelled | payment | *(none yet — finding #31)* |
 
 Each topic also has a `<topic>-dlt` companion, created on first failure.
@@ -465,7 +465,7 @@ Every publisher call sits inside `@Transactional`:
 |---|---|---|
 | auth | `register()` | `AuthService:73` |
 | auth | `deleteUser()` | `UserService:104` |
-| inquiry | `send()` | `InquiryService:59` |
+| inquiry | `startOrAppend()` / `reply()` | `ConversationService` |
 | listing | `approve()` / `reject()` | `ListingModerationService:41,55` |
 | payment | webhook handlers | `SubscriptionService:217,242` |
 
@@ -793,6 +793,11 @@ it was a constant with no publisher at all (old finding #37, now resolved).
 
 `UserService.updateProfile` publishes `user.updated`; without it, every projection
 would keep the name, phone and city captured at registration.
+
+`auth-service` consumes `listing.created/updated/approved/rejected/deleted` into
+`auth_listing_view`, purely to count a seller's active listings for the public
+profile. It is the narrowest projection in the system — seller id and approval state,
+nothing else — because everything else about a listing belongs to listing-service.
 
 ### 10.3 Projections need no dedup table
 

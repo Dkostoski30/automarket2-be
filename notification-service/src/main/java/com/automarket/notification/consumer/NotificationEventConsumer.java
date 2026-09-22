@@ -55,8 +55,16 @@ public class NotificationEventConsumer {
             }
             case InquiryEvent.SENT -> {
                 InquiryEvent.Sent event = objectMapper.treeToValue(payload, InquiryEvent.Sent.class);
-                log.info("inquiry.sent: inquiry={} seller={}", event.inquiryId(), event.sellerEmail());
-                emailService.sendNewInquiry(event.sellerEmail(), event.listingTitle(), event.senderName());
+                log.info("inquiry.sent: conversation={} seller={}", event.conversationId(), event.sellerEmail());
+                emailService.sendNewInquiry(event.sellerEmail(), event.listingTitle(),
+                        event.senderName(), event.conversationId());
+            }
+            case InquiryEvent.REPLIED -> {
+                InquiryEvent.Replied event = objectMapper.treeToValue(payload, InquiryEvent.Replied.class);
+                log.info("inquiry.replied: conversation={} recipient={}",
+                        event.conversationId(), event.recipientEmail());
+                emailService.sendConversationReply(event.recipientEmail(), event.listingTitle(),
+                        event.senderName(), event.conversationId());
             }
             default -> log.debug("No handler for event type: {}", eventType);
         }

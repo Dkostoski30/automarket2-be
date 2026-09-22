@@ -93,6 +93,13 @@ spring:
           predicates:
             - Path=/api/v1/inquiries/**
 
+        # Message threads → inquiry-service. Same service as inquiries: an inquiry
+        # is the first message of a conversation.
+        - id: conversations
+          uri: ${INQUIRY_SERVICE_URL:http://inquiry-service:8084}
+          predicates:
+            - Path=/api/v1/conversations/**
+
         # Reference data → listing-service (merged)
         - id: reference
           uri: ${LISTING_SERVICE_URL:http://listing-service:8082}

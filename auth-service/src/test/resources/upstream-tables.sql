@@ -16,3 +16,12 @@ CREATE TABLE IF NOT EXISTS cities (
     id   UUID PRIMARY KEY,
     name VARCHAR(100) NOT NULL
 );
+
+-- V4 backfills the seller listing-count projection from listings, owned by
+-- listing-service. Columns match only what the backfill selects.
+CREATE TABLE IF NOT EXISTS listings (
+    id         UUID PRIMARY KEY,
+    seller_id  UUID NOT NULL,
+    approved   BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMP WITH TIME ZONE
+);

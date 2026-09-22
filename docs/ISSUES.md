@@ -301,14 +301,30 @@ Any real fix needs an operational step on the cluster. Pick one:
 
 ---
 
-### 28. ⚠️ LOW — Seller profiles always report zero listings
+### 28. 🔧 LOW — Seller profiles always report zero listings
 
-`UserService.getPublicProfile()` returns `totalListings = 0` hardcoded, with
+`UserService.getPublicProfile()` returned `totalListings = 0` hardcoded, with
 `// will be replaced with Feign call to listing-service`. The count lived in the
-monolith and was never reconnected, so every public seller profile shows 0.
+monolith and was never reconnected, so every public seller profile showed 0.
 
-Fix alongside #26 — either a Feign call to `listing-service` or a counter maintained
-from listing events. Do not add another direct cross-service table read.
+**Fixed** with the event-driven half of the two options, not the Feign call: a
+synchronous hop would have been the first in this codebase and would have put a public
+page at the mercy of listing-service being up.
+
+`auth-service` now projects `automarket.listing-events` into `auth_listing_view`
+(`V4__listing_projection.sql`) and counts locally. It stores a row per listing rather
+than a per-seller counter on purpose — `listing.deleted` carries only the listing id,
+so a counter could not know whether the listing it removes was approved and would
+drift. With a row per listing every handler is a blind upsert or a delete by primary
+key, which is why this projection needs no inbox table; `ListingEventConsumer` asserts
+that in `ListingEventConsumerTest`.
+
+"Active" tracks listing-service's own `countActiveBySellerId` — approved and not
+deleted. Rejection soft-deletes, so a rejected listing is removed rather than flagged.
+
+Related: the public profile page also had no way to *list* a seller's cars.
+`ListingFilterRequest` gained a `sellerId`, so `GET /api/v1/listings?sellerId=…` serves
+that from the existing public, paginated, approved-only browse.
 
 ---
 
@@ -339,7 +355,7 @@ discarded. Needs the same broker-side queue work as #27.
 | 27 | MEDIUM | ⚠️ | Messaging | Two bound queues with no consumer — unbounded growth |
 | 23 | LOW | 🔧 | Resilience | RabbitMQ connection retry/timeout (was #16) |
 | 24 | LOW | 🔧 | Cleanup | Dead N+1 `toDto` in `InquiryService` |
-| 28 | LOW | ⚠️ | Logic | Seller profile `totalListings` hardcoded to 0 |
+| 28 | LOW | 🔧 | Logic | Seller profile `totalListings` hardcoded to 0 |
 | 29 | LOW | ⚠️ | Messaging | Failed notification events silently dropped |
 | 25 | TRIVIAL | 🔧 | Docs | Stale monolith comment in gateway |
 
