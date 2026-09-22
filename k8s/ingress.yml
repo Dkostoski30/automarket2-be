@@ -18,13 +18,17 @@ spec:
                 name: gateway
                 port:
                   number: 8080
+          # Uploaded media is served straight from MinIO rather than through
+          # the gateway: it is public, static, and routing it through a JWT
+          # filter would put every image on a listing page behind the edge.
+          # The bucket is called "uploads", so the prefix maps 1:1 onto it.
           - path: /uploads
             pathType: Prefix
             backend:
               service:
-                name: gateway
+                name: minio
                 port:
-                  number: 8080
+                  number: 9000
           - path: /
             pathType: Prefix
             backend:

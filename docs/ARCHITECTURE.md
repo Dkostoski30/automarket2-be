@@ -3,7 +3,7 @@
 Living status of the microservice architecture. Companion to `ISSUES.md` (defects);
 this file tracks **what exists, what is half-built, and what is only a placeholder**.
 
-Last reviewed: 2026-09-17, branch `feature/devops-setup`.
+Last reviewed: 2026-09-22, branch `feature/devops-setup`. See §11 for the cluster-readiness pass.
 
 **Decisions taken** (2026-09-17):
 - Target data architecture: **schema-per-service** in one PostgreSQL instance
@@ -85,20 +85,20 @@ schema per service (§5, Phase 3).
 | CORS | ✅ | Centralised at gateway |
 | Redis caching | 🟡 | Real in listing-service; `@EnableCaching` unused in auth-service |
 | Rate limiting | 🔌 | Gateway pulls `data-redis-reactive` for it; never wired — finding #36 |
-| Storage abstraction (local + S3) | ✅ | Both providers genuinely implemented |
+| Storage abstraction (local + S3) | ✅ | S3 is the default, backed by in-cluster MinIO (§11.1) |
 | Flyway migrations | ✅ | Per-service history tables (`ISSUES.md` #18) |
 | JPA auditing | ✅ | Fixed — finding #30 |
 | **Event bus (Kafka)** | ✅ | Migrated from RabbitMQ — §3 |
 | Dead-letter handling | ✅ | `DefaultErrorHandler` → `<topic>-dlt` |
-| Prometheus metrics | 💥 | Scrapes return 401 — finding #32 |
+| Prometheus metrics | ✅ | `/actuator/prometheus` permitted in every service — #32 fixed |
 | Grafana | 🟡 | Datasource provisioned, no dashboards committed |
 | Distributed tracing | ❌ | None |
-| Automated tests | ❌ | **0 test files across 11 modules** — finding #35 |
+| Automated tests | 🟡 | Migration, consumer, outbox/inbox, RS256 and schema-split tests; no controller tests yet — #35 |
 | CI build + push | ✅ | 7 services, GHA cache |
 | CI tests / lint / scan | ❌ | Build only |
 | ArgoCD GitOps | ✅ | Tracks `master` |
-| NetworkPolicy | ❌ | Finding #33 |
-| HPA / PodDisruptionBudget | ❌ | All `replicas: 1` — finding #38 |
+| NetworkPolicy | ✅ | `k8s/networkpolicy.yml` + gateway shared secret — #33 fixed |
+| HPA / PodDisruptionBudget | ✅ | `k8s/autoscaling.yml`; upload services made stateless for it (§11.1) |
 
 ### Service-to-service HTTP API — **slated for deletion**
 
@@ -595,11 +595,11 @@ Phases 0 and 1 in section 5 are unchanged. What follows replaces Phase 2 onward.
 3. ✅ #44 — analytics fixed — §9.4
 4. ✅ Inbox/dedup table keyed on `eventId` — §9.2
 
-**Phase 3 — Break the coupling** — ✅ steps 5–7 **COMPLETE** (§10); step 8 held for a separate release (§10.6)
+**Phase 3 — Break the coupling** — ✅ **COMPLETE** (§10, §11.4)
 5. ✅ #40 — all six cross-service reads replaced by local projections — §10.1
 6. ✅ #41 — `Listing.seller` now associates to listing-service's own read model — §10.1
 7. ✅ Deleted the `/internal/**` controllers and their permitAll rules — §10.7
-8. ⬜ `hibernate.default_schema` + `flyway.schemas` per service — **separate release**, see §10.6
+8. ✅ One PostgreSQL schema per service — §11.4
 
 **Phase 4 — Security architecture**
 9. #42 — RS256; auth signs with the private key, gateway verifies with the public key
@@ -903,3 +903,130 @@ failure above.
 
 blog-service also gained `spring-kafka` and `automarket-events` — it previously had no
 messaging at all.
+
+---
+
+## 11. Cluster-readiness pass (2026-09-22)
+
+Four defects that only show up once the system actually runs as a cluster.
+
+### 11.1 Upload services were stateful under an HPA (new finding #46, fixed)
+
+listing-service and blog-service wrote uploads to `ReadWriteOnce` PVCs, while
+`k8s/autoscaling.yml` scaled both to 3 replicas with `maxUnavailable: 0`. On the
+single-node k3d cluster this works by accident. On any multi-node cluster a second
+pod cannot mount the volume, so scale-out never schedules and rollouts deadlock.
+
+**Fix:** `STORAGE_PROVIDER=s3` against an in-cluster **MinIO** (StatefulSet, plus a
+Job that creates the `uploads` bucket with anonymous read). `S3ClientConfig` gained
+`endpoint`, `path-style`, `region` and static-credential properties. A blank endpoint
+still means real AWS. The ingress sends `/uploads` straight to MinIO, and the bucket
+is named `uploads`, so public image URLs are byte-identical to before. Both
+deployments now have no volumes, and the PVC manifests are deleted.
+
+*Existing uploads are moved automatically.*
+- **Kubernetes:** if `listing-uploads-pvc` and `blog-uploads-pvc` still exist,
+  `deploy.sh` (step 6d):
+  1. waits for both deployments to finish rolling out, so no pod still mounts the PVCs;
+  2. runs `k8s/migrations/migrate-uploads-job.yml`, which runs `mc mirror` on each
+     PVC into the bucket root and then fails if `mc diff` finds any file missing or
+     different;
+  3. deletes the Job and both PVCs only if the Job succeeded.
+
+  On any failure the PVCs are kept and the next `deploy.sh` retries.
+- **docker-compose:** the one-shot `uploads-migrate` service moves the old
+  `uploads_data` volume the same way, then empties it. Every `up` after that is a
+  no-op, and the volume can be removed.
+
+Storage keys were paths under `/app/uploads` (`listings/…`, `blog/covers/…`,
+`blog/content/…`) and are used as S3 keys unchanged. The URLs already stored in the
+database therefore stay valid without a data migration.
+
+### 11.2 Liveness probed the dependencies (#34, fixed)
+
+`management.endpoint.health.probes.enabled: true` in all seven services. Liveness
+now hits `/actuator/health/liveness` (JVM state only). Readiness hits
+`/actuator/health/readiness` (`readinessState,db` for the five services with a
+database). A Postgres blip now takes pods out of the Service instead of restarting
+all of them.
+
+### 11.3 RS256 and per-concern Secrets (#42, fixed)
+
+auth-service signs with a private key only it mounts (`automarket-jwt-secret`). The
+gateway verifies with the public key from the ConfigMap. `automarket-secret` is split
+by concern (jwt / storage / stripe / mail), and each deployment mounts only what it
+needs. A compromised blog-service pod no longer holds the token-signing key, the
+Stripe keys or the mail API key.
+
+The committed dev keypair in `application.yml` follows the old
+`change-this-secret-in-production` precedent. **Override it anywhere real.**
+`JwtServiceTest` checks that the gateway's public key verifies what auth-service
+signs, and that tokens forged with the retired HS256 string are rejected.
+
+### 11.4 Schema-per-service (Phase 3 step 8, done)
+
+Each of the five database services owns one schema: `auth`, `listing`, `blog`,
+`inquiry` and `payment`. Nothing is left in `public`, and no foreign key crosses a schema.
+
+**Configuration**, in each service's `application.yml` (no profile):
+- `hikari.schema: <svc>` sets the search path of every pooled connection. This is
+  what routes the native queries, such as the outbox claim, that
+  `hibernate.default_schema` does not touch. Without it the claim fails with
+  `relation "outbox" does not exist`.
+- `hibernate.default_schema`, `flyway.default-schema` and `flyway.schemas` are set to
+  `<svc>`. On a fresh database, Flyway creates the schema.
+- A `flyway.init-sqls` guard refuses to migrate while `public.flyway_history_<svc>`
+  exists. An image rolled out onto a pre-split database therefore crash-loops with
+  a clear message, instead of creating empty tables beside the real ones. This
+  covers ArgoCD too.
+- `db/migration/beforeEachMigrate.sql` puts the source service's schema behind the
+  service's own, for migrations only. That keeps the old backfill migrations
+  resolving their unqualified cross-service names (§10.6) on a fresh database.
+  Those migrations can't be edited: changing their checksums would stop every
+  existing database from validating.
+
+**Existing databases** are moved once by `db/schema-split/cutover.sql`. It is one
+transaction:
+- It moves every table, and each Flyway history table, into its owner's schema.
+- It splits the shared `outbox` and `processed_event` tables by owner. Undelivered
+  events move with them.
+- It refuses to run while a JDBC session is open or if it has already run. It
+  aborts on unowned rows or leftover tables.
+
+It runs automatically whenever the pre-split layout is found:
+- **k3d:** `deploy.sh` step 4b scales the five services to zero, writes a `pg_dump`
+  to `~/automarket-backups/` and runs the cutover. Step 5 then brings the services
+  back up.
+- **docker-compose:** the one-off `db-schema-split` service runs the cutover. The
+  five services wait for it to complete. When upgrading a running stack, stop them
+  first, because the cutover will not run under their open connections.
+
+To undo, restore the dump and deploy the previous release.
+
+**Why not a Flyway migration:** Flyway cannot move its own history table, and the move
+must happen while nothing is running.
+
+**Tests:**
+- `SchemaSplitCutoverTest` builds a pre-split database from the real migrations and
+  reads the real `application.yml` files. It checks that:
+  - after the cutover, Flyway executes nothing;
+  - a **fresh install produces the identical layout**, every column in every schema;
+  - auth's city projection still seeds on a fresh install;
+  - the services refuse the old layout;
+  - the cutover's own guards hold.
+- `AuthAfterCutoverBootTest` boots auth-service against a cut-over database and
+  proves that both JPA and native queries reach the moved tables.
+
+**Not done:** every service still connects as the same `automarket` role, so the
+boundary is enforced by configuration, not by grants. Per-service roles would make
+it a permission boundary.
+
+### 11.5 Still open
+
+- **Single-replica stateful tier.** Postgres, Kafka (RF=1), Redis and MinIO each
+  have one replica. This is a documented thesis-scope trade-off (#38).
+- **Testcontainers 1.19.6 cannot reach Docker Engine 29.** Docker 29 requires API
+  1.44 or later. Until `testcontainers.version` is bumped, run the tests with
+  `DOCKER_API_VERSION=1.44`.
+- **Rate limiting (#36)**, **listing-service decomposition (#43)**.
+

@@ -20,6 +20,10 @@ spring:
     username: ${DB_USERNAME:automarket}
     password: ${DB_PASSWORD:secret}
     hikari:
+      # search_path of every pooled connection: this service\'s own schema only.
+      # Routes native queries (outbox claim etc.), which default_schema below
+      # does not touch.
+      schema: listing
       maximum-pool-size: 5
       minimum-idle: 1
   jpa:
@@ -28,6 +32,7 @@ spring:
     show-sql: false
     properties:
       hibernate:
+        default_schema: listing
         dialect: org.hibernate.dialect.PostgreSQLDialect
         jdbc:
           batch_size: 25
@@ -35,10 +40,18 @@ spring:
         order_updates: true
   flyway:
     enabled: true
-    # Shared PostgreSQL schema: each service needs its OWN Flyway history table.
-    # With the default (flyway_schema_history) the first service to start records
-    # its V1__baseline and every other service then fails with a checksum
-    # mismatch on version 1 and never boots.
+    # Each service owns one PostgreSQL schema; its tables and its history table
+    # live there. Flyway creates the schema on a fresh database. An existing
+    # database from before the split is moved here by db/schema-split/cutover.sql.
+    default-schema: listing
+    schemas: listing
+    # Refuse to migrate a database that still has the old shared layout: Flyway
+    # would find no history in `listing`, baseline, and create empty tables beside
+    # the real ones. Runs on Flyway's connection before anything is created.
+    init-sqls:
+      - "DO $$ BEGIN IF to_regclass('public.flyway_history_listing') IS NOT NULL THEN RAISE EXCEPTION 'Database still has the shared public-schema layout. Run db/schema-split/cutover.sql first (k8s/deploy.sh and docker compose do this).'; END IF; END $$;"
+    # Kept from the shared-schema era, when every service needed its own name;
+    # the cutover moves the table under this name.
     table: flyway_history_listing
     baseline-on-migrate: true
     baseline-version: 0
@@ -120,3 +133,18 @@ management:
   endpoint:
     health:
       show-details: when-authorized
+      # Split the aggregate health endpoint into liveness and readiness groups so
+      # the Kubernetes probes can ask different questions. All three probes used
+      # to hit /actuator/health, which aggregates DB, Redis and Kafka — meaning a
+      # transient Postgres blip failed *liveness* and Kubernetes restarted every
+      # replica of every service at once, which cannot fix a remote dependency and
+      # hammers the database on recovery.
+      probes:
+        enabled: true
+      group:
+        # Liveness stays the Spring default (livenessState only): is this JVM
+        # wedged? A dependency being down is never a reason to restart.
+        # Readiness adds the datasource, because a pod that cannot reach Postgres
+        # should leave the Service endpoints — but not be killed.
+        readiness:
+          include: readinessState,db

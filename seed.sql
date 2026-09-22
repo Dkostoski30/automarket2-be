@@ -4,6 +4,9 @@
 
 BEGIN;
 
+-- Tables live in one schema per service; every name below is unique across them.
+SET LOCAL search_path TO auth, listing, blog, inquiry, payment;
+
 -- ============================================================
 -- 1. ROLES
 -- ============================================================

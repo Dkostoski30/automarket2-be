@@ -20,6 +20,8 @@ spec:
       labels:
         app: listing-service
     spec:
+      # No volumes: uploads go to MinIO over S3. A ReadWriteOnce PVC here meant
+      # the HPA below could never actually place a second replica on another node.
       # Must exceed spring.lifecycle.timeout-per-shutdown-phase (30s).
       terminationGracePeriodSeconds: 45
       containers:
@@ -33,23 +35,22 @@ spec:
                 name: automarket-config
             - secretRef:
                 name: automarket-secret
-          volumeMounts:
-            - name: uploads
-              mountPath: /app/uploads
+            - secretRef:
+                name: automarket-storage-secret
           startupProbe:
             httpGet:
-              path: /actuator/health
+              path: /actuator/health/readiness
               port: 8082
             failureThreshold: 30
             periodSeconds: 10
           readinessProbe:
             httpGet:
-              path: /actuator/health
+              path: /actuator/health/readiness
               port: 8082
             periodSeconds: 10
           livenessProbe:
             httpGet:
-              path: /actuator/health
+              path: /actuator/health/liveness
               port: 8082
             initialDelaySeconds: 30
             periodSeconds: 15
@@ -61,7 +62,3 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
-      volumes:
-        - name: uploads
-          persistentVolumeClaim:
-            claimName: listing-uploads-pvc

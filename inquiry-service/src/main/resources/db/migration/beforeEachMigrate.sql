@@ -1,0 +1,14 @@
+-- Flyway callback: runs before every versioned migration, on the same connection.
+--
+-- Some early migrations seed this service's projections from another service's
+-- tables — here `users` and `listings` (inquiry V3, V4) — by unqualified name. They were written when every
+-- service shared `public`, and they cannot be edited now: an applied migration
+-- whose checksum changes stops every existing database from validating.
+--
+-- Adding the owning schemas behind this service's own keeps those names resolving
+-- on a fresh database, for migrations only. The application's own connections see
+-- `inquiry` alone (spring.datasource.hikari.schema), and Flyway restores the
+-- connection's original search_path when it is done. On a fresh cluster the
+-- services converge as before: a service whose source table does not exist yet
+-- fails its migration, rolls back, restarts, and succeeds once the owner has run.
+SET search_path TO inquiry, auth, listing;

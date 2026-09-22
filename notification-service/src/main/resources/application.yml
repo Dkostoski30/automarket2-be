@@ -78,6 +78,10 @@ management:
   endpoint:
     health:
       show-details: when-authorized
+      # See auth-service's application.yml. No datasource here, so the readiness
+      # group keeps the default membership.
+      probes:
+        enabled: true
 
 logging:
   level:

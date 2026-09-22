@@ -5,6 +5,10 @@ metadata:
   namespace: automarket
 data:
   DB_URL: "jdbc:postgresql://postgres:5432/automarket"
+  # The JWT verification key. In the ConfigMap and not a Secret on purpose: it
+  # is the public half, it verifies but cannot sign, and keeping it here makes
+  # it obvious that only automarket-jwt-secret (auth-service) is sensitive.
+  JWT_PUBLIC_KEY: "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtWzU+4P5S7nUqvLpltjE3b5lmaQ39APriXAzyRD2l7c3mJJx2bas1oOMKJq/77icam4VvQuqCToGLWZDKUMHnhRAkFlAYGC44MV1Hf5XMOplawINkkCYRhEkH7LJ5khTxb26Ba8Matubjnn4hVHgxIacqAKC01ZYsjVGW2OthPlaPY9WshpT3wJNY6ANaxBSlhEy8+1p2oPitkAcT9TnqG6SuTUHOsLtZHtOYPqzmB/TfmWRZl3LL9pw8kWD58ZwSvLSjNPOCUS8oMCbOm7Hvka7tNndtelW75Yp2NJ+QqfyDqoQmNfiPYdcI6hZEh/qQNEIaDCwkUV/RYPVI8cHZQIDAQAB"
   DB_USERNAME: "automarket"
   REDIS_HOST: "redis"
   REDIS_PORT: "6379"
@@ -16,9 +20,17 @@ data:
   MAIL_PASSWORD: ""
   MAIL_FROM: "noreply@automarket.com"
   FRONTEND_URL: "http://automarket.local"
-  STORAGE_PROVIDER: "local"
-  LOCAL_UPLOAD_DIR: "/app/uploads"
-  LOCAL_BASE_URL: "http://automarket.local/uploads"
+  # Uploads go to MinIO over S3, not to a mounted volume — see
+  # k8s/infrastructure/minio-statefulset.yml for why.
+  STORAGE_PROVIDER: "s3"
+  S3_BUCKET: "uploads"
+  S3_ENDPOINT: "http://minio:9000"
+  S3_PATH_STYLE: "true"
+  S3_REGION: "eu-central-1"
+  # Browsers fetch objects through the ingress, which proxies /uploads to MinIO.
+  # The bucket is named "uploads" so the path MinIO sees is /uploads/<key> —
+  # keeping the public URL byte-identical to the old local-storage one.
+  CDN_URL: "http://automarket.local/uploads"
   STRIPE_ENABLED: "false"
   AUTH_SERVICE_URL: "http://auth-service:8081"
   LISTING_SERVICE_URL: "http://listing-service:8082"

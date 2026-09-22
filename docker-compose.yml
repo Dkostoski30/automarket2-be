@@ -22,6 +22,38 @@ services:
       retries: 5
       start_period: 10s
 
+  # Moves a database created before the schema split into one schema per
+  # service (db/schema-split/cutover.sql), once. The five database services wait
+  # for it; on a fresh or already-split database it exits straight away. The
+  # cutover refuses to run while an old container is still connected — stop
+  # them first if you are upgrading a running stack.
+  db-schema-split:
+    image: postgres:16-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: automarket
+      PGPASSWORD: secret
+      PGDATABASE: automarket
+    volumes:
+      - ./db/schema-split:/scripts:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        if [ "$$(psql -tAc "SELECT to_regclass('public.flyway_history_auth') IS NOT NULL")" != "t" ]; then
+          echo "no pre-split layout — nothing to do"
+          exit 0
+        fi
+        echo "pre-split database — moving each service into its own schema"
+        psql -v ON_ERROR_STOP=1 -f /scripts/cutover.sql || {
+          echo "cutover rolled back, database unchanged. If services are still running:"
+          echo "  docker compose stop auth-service listing-service blog-service inquiry-service payment-service"
+          echo "then run docker compose up again."
+          exit 1
+        }
+
   # ──────────────────────────────────────────
   # Redis
   # ──────────────────────────────────────────
@@ -80,6 +112,37 @@ services:
       mc anonymous set download local/${S3_BUCKET:-uploads} &&
       echo 'bucket ready'
       "
+
+  # Moves uploads written before the switch to MinIO (listing-service's old
+  # uploads_data volume) into the bucket, then empties the volume so later runs
+  # are no-ops. The volume is only emptied if every file arrived intact; on a
+  # failure it is left untouched and the next `docker compose up` retries.
+  # Storage keys were paths under /app/uploads and are the S3 keys unchanged,
+  # so image URLs already in the database keep working.
+  uploads-migrate:
+    image: minio/mc:RELEASE.2024-06-12T14-34-03Z
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    volumes:
+      - uploads_data:/old
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        if [ -z "$$(ls -A /old)" ]; then echo "no old uploads to migrate"; exit 0; fi
+        mc alias set local http://minio:9000 "${S3_ACCESS_KEY:-minioadmin}" "${S3_SECRET_KEY:-minioadmin}"
+        mc mirror --overwrite /old "local/${S3_BUCKET:-uploads}"
+        # The mc image has no grep/find. '<' = only on disk, '!' = differs;
+        # '>' (only in the bucket) is expected — uploads made since the switch.
+        mc diff /old "local/${S3_BUCKET:-uploads}" > /tmp/diff || true
+        missing=0
+        while read -r flag path; do
+          case "$$flag" in "<"*|"!"*) missing=$$((missing + 1)); echo "not copied: $$path" ;; esac
+        done < /tmp/diff
+        if [ "$$missing" != "0" ]; then echo "$$missing file(s) did not arrive intact, volume kept"; exit 1; fi
+        rm -rf /old/* /old/.[!.]* 2>/dev/null || true
+        echo "old uploads moved to MinIO"
 
   # ──────────────────────────────────────────
   # Kafka (event bus for microservices) — single-node KRaft, no ZooKeeper
@@ -203,8 +266,8 @@ services:
     ports:
       - "8081:8081"
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-schema-split:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       kafka:
@@ -225,8 +288,8 @@ services:
     ports:
       - "8082:8082"
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-schema-split:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       kafka:
@@ -248,8 +311,8 @@ services:
     ports:
       - "8083:8083"
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-schema-split:
+        condition: service_completed_successfully
       minio:
         condition: service_healthy
 
@@ -268,8 +331,8 @@ services:
     ports:
       - "8084:8084"
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-schema-split:
+        condition: service_completed_successfully
       kafka:
         condition: service_healthy
 
@@ -288,8 +351,8 @@ services:
     ports:
       - "8086:8086"
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-schema-split:
+        condition: service_completed_successfully
       kafka:
         condition: service_healthy
 
@@ -350,8 +413,9 @@ volumes:
   postgres_data:
   minio_data:
   kafka_data:
-  # No longer mounted — uploads live in MinIO now. Kept so that files written
-  # before the switch are not orphaned; drop it once they have been migrated.
+  # Only mounted by uploads-migrate, which moves anything left in it into
+  # MinIO and empties it. Safe to delete once that has run:
+  #   docker volume rm <project>_uploads_data
   uploads_data:
   prometheus_data:
   grafana_data:

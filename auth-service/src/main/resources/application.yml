@@ -20,6 +20,10 @@ spring:
     username: ${DB_USERNAME:automarket}
     password: ${DB_PASSWORD:secret}
     hikari:
+      # search_path of every pooled connection: this service\'s own schema only.
+      # Routes native queries (outbox claim etc.), which default_schema below
+      # does not touch.
+      schema: auth
       maximum-pool-size: 5
       minimum-idle: 1
   jpa:
@@ -28,13 +32,22 @@ spring:
     show-sql: false
     properties:
       hibernate:
+        default_schema: auth
         dialect: org.hibernate.dialect.PostgreSQLDialect
   flyway:
     enabled: true
-    # Shared PostgreSQL schema: each service needs its OWN Flyway history table.
-    # With the default (flyway_schema_history) the first service to start records
-    # its V1__baseline and every other service then fails with a checksum
-    # mismatch on version 1 and never boots.
+    # Each service owns one PostgreSQL schema; its tables and its history table
+    # live there. Flyway creates the schema on a fresh database. An existing
+    # database from before the split is moved here by db/schema-split/cutover.sql.
+    default-schema: auth
+    schemas: auth
+    # Refuse to migrate a database that still has the old shared layout: Flyway
+    # would find no history in `auth`, baseline, and create empty tables beside
+    # the real ones. Runs on Flyway's connection before anything is created.
+    init-sqls:
+      - "DO $$ BEGIN IF to_regclass('public.flyway_history_auth') IS NOT NULL THEN RAISE EXCEPTION 'Database still has the shared public-schema layout. Run db/schema-split/cutover.sql first (k8s/deploy.sh and docker compose do this).'; END IF; END $$;"
+    # Kept from the shared-schema era, when every service needed its own name;
+    # the cutover moves the table under this name.
     table: flyway_history_auth
     baseline-on-migrate: true
     baseline-version: 0
@@ -79,7 +92,14 @@ automarket:
     # self-asserted and any pod could claim ROLE_ADMIN.
     shared-secret: ${GATEWAY_SHARED_SECRET:dev-insecure-gateway-secret}
   jwt:
-    secret: ${JWT_SECRET:change-this-secret-in-production-must-be-at-least-32-chars}
+    # RS256. auth-service is the only holder of the private key; everything else
+    # that needs to check a token gets the public half, which is not a secret.
+    #
+    # The defaults below are a throwaway dev keypair, committed so the stack runs
+    # out of the box — exactly as the old shared HS256 string was. Override both
+    # in any real deployment; docs/devops.md has the openssl commands.
+    private-key: ${JWT_PRIVATE_KEY:MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQC1bNT7g/lLudSq8umW2MTdvmWZpDf0A+uJcDPJEPaXtzeYknHZtqzWg4womr/vuJxqbhW9C6oJOgYtZkMpQweeFECQWUBgYLjgxXUd/lcw6mVrAg2SQJhGESQfssnmSFPFvboFrwxq25uOefiFUeDEhpyoAoLTVliyNUZbY62E+Vo9j1ayGlPfAk1joA1rEFKWETLz7Wnag+K2QBxP1OeobpK5NQc6wu1ke05g+rOYH9N+ZZFmXcsv2nDyRYPnxnBK8tKM084JRLygwJs6bse+Rru02d216VbvlinY0n5Cp/IOqhCY1+I9h1wjqFkSH+pA0QhoMLCRRX9Fg9UjxwdlAgMBAAECggEAAcX02e0wQYO0THpoS7vOaBkjUHpjsRhoMRXswTfgZrb2TEfygH7T8Y/FbHTfdIW5iw0dXFKrsH2STn6CeXRhRIzYIAMm9zEl9Rtsc2kT1CLfakmaHETuJJyoR1c2Ebj4u8ZcOLb0/R0spqAovprDLyy89OaRuvUUXD93Z5TV9rGTHIOkeVG0IGHc/FBpMn2/KPhvteFW0LG7dMNb4YROvTD9Bw9XdW4SSIvJ5qhmNON/HBX4oX/yTRDdaysnKLsidXMUnGDTRXGRkN8pT1XywOFf7pLu/pSu/51cFCNU3LDYCud2aXlgGT0PtXdHD1QjVn8ln+jqrIDmuLrZQsCAwQKBgQDbxZQocMR0y8/BEUG6Q7GIEM8/k1FA9covPex+qmeaFz0vm5HsdHi6x35Zn1Ca/tIPwtn0rlY6oPg1CFwnDQU+2/TBN7wtQZeySrU91Giq9npHPFG3cSOGm1lfpVPQe/ZGaEM/AjZTS/5eo0vo8aLfU/e/JROLQt4mxXBzijopUQKBgQDTVQPNzJowduMvIhQdwwd1vBD5R8KLFsrppDSRdpNXShhde+kYn9VfP6IOupgUS9JGOB2zai4vJMEqQ4RP68mP3UVI9exzKjWhBKj/F3ffN2fETJKBGIF8Y2KZ0ZdV09fvRg7+8pUvBq/u9JyWog0nM+5iXXcg4ZdsASjhCc531QKBgAGLwUALkwYzTNHR2kGCKmSHob2TvrWTRQnSCLDXaAUodrC4Cm28YAEIWDYvLbT5Z+beewQCme6tpTFSTrujls7bYzxctQEoffWuGtpFfTr+otuPbA+7RwGyZA2NLyq/RHs4TojJ7jHlzfNCeM05reieQZbhnuKS5Ncm+mSFq2URAoGAMXwswdnxGPwdwoGmWDm823LIPrbw9QTHSuJqdM1hPwVYoztKn7t9iSorVmuXBNmkSVEGk2Z/ngZrPOxGZTh/IDLd8HG1hloR6LxgnirupNQidjK/8367g1b6Va5gU3ahj6PGCyjeif503+1jZVpY3h8o6Nud85Mfk+jJm7hiImkCgYB8ek/p6fJjJkFeVyGeq7Ik33EirrxAM6uaLmlsJk6WK5KWewp0HRMnfK0rbYsRAUbeIEdn5ctn9O3RpNW+k2XuD1zPj9p2Q4O71Sp2oMQOO3k4HgqBG10dAeu3Dj2+B2kbMULuepi4y6KbaFqQqKsPl6IDkRoa+d03aOEZKgXNew==}
+    public-key: ${JWT_PUBLIC_KEY:MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtWzU+4P5S7nUqvLpltjE3b5lmaQ39APriXAzyRD2l7c3mJJx2bas1oOMKJq/77icam4VvQuqCToGLWZDKUMHnhRAkFlAYGC44MV1Hf5XMOplawINkkCYRhEkH7LJ5khTxb26Ba8Matubjnn4hVHgxIacqAKC01ZYsjVGW2OthPlaPY9WshpT3wJNY6ANaxBSlhEy8+1p2oPitkAcT9TnqG6SuTUHOsLtZHtOYPqzmB/TfmWRZl3LL9pw8kWD58ZwSvLSjNPOCUS8oMCbOm7Hvka7tNndtelW75Yp2NJ+QqfyDqoQmNfiPYdcI6hZEh/qQNEIaDCwkUV/RYPVI8cHZQIDAQAB}
     access-token-expiry-ms: 900000
     refresh-token-expiry-ms: 2592000000
   cors:
@@ -99,3 +119,18 @@ management:
   endpoint:
     health:
       show-details: when-authorized
+      # Split the aggregate health endpoint into liveness and readiness groups so
+      # the Kubernetes probes can ask different questions. All three probes used
+      # to hit /actuator/health, which aggregates DB, Redis and Kafka — meaning a
+      # transient Postgres blip failed *liveness* and Kubernetes restarted every
+      # replica of every service at once, which cannot fix a remote dependency and
+      # hammers the database on recovery.
+      probes:
+        enabled: true
+      group:
+        # Liveness stays the Spring default (livenessState only): is this JVM
+        # wedged? A dependency being down is never a reason to restart.
+        # Readiness adds the datasource, because a pod that cannot reach Postgres
+        # should leave the Service endpoints — but not be killed.
+        readiness:
+          include: readinessState,db

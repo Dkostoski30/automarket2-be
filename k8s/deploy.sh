@@ -93,6 +93,8 @@ kubectl apply -f "$SCRIPT_DIR/infrastructure/postgres-statefulset.yml"
 kubectl apply -f "$SCRIPT_DIR/infrastructure/postgres-service.yml"
 kubectl apply -f "$SCRIPT_DIR/infrastructure/redis-deployment.yml"
 kubectl apply -f "$SCRIPT_DIR/infrastructure/redis-service.yml"
+kubectl apply -f "$SCRIPT_DIR/infrastructure/minio-service.yml"
+kubectl apply -f "$SCRIPT_DIR/infrastructure/minio-statefulset.yml"
 kubectl apply -f "$SCRIPT_DIR/infrastructure/kafka-service.yml"
 kubectl apply -f "$SCRIPT_DIR/infrastructure/kafka-statefulset.yml"
 kubectl apply -f "$SCRIPT_DIR/infrastructure/mailhog-deployment.yml"
@@ -111,11 +113,50 @@ echo "Waiting for infrastructure to be ready..."
 kubectl -n automarket wait --for=condition=ready pod -l app=postgres --timeout=120s
 kubectl -n automarket wait --for=condition=ready pod -l app=redis --timeout=60s
 kubectl -n automarket wait --for=condition=ready pod -l app=kafka --timeout=180s
+kubectl -n automarket wait --for=condition=ready pod -l app=minio --timeout=120s
+
+# Create the uploads bucket. Must happen after MinIO is ready and before the
+# upload services take traffic, or the first upload fails with NoSuchBucket.
+# Re-applying needs the delete: a completed Job's pod template is immutable.
+echo "Initialising object storage..."
+kubectl -n automarket delete job minio-init --ignore-not-found=true
+kubectl apply -f "$SCRIPT_DIR/infrastructure/minio-init-job.yml"
+kubectl -n automarket wait --for=condition=complete job/minio-init --timeout=120s
+
+# ── 4b. Schema-per-service cutover (one-off) ───────────────────
+# A database created before the schema split still has every table in `public`.
+# The new images refuse to boot against it, so move it first: stop the five
+# database services (nothing may write while tables move), take a backup, and
+# run db/schema-split/cutover.sql — one transaction, all or nothing. Step 5 then
+# brings the services back on the new layout. A fresh database skips this: the
+# services create their own schemas.
+PSQL=(kubectl -n automarket exec -i postgres-0 -- psql -U automarket -d automarket -v ON_ERROR_STOP=1)
+if [ "$("${PSQL[@]}" -tAc "SELECT to_regclass('public.flyway_history_auth') IS NOT NULL")" = "t" ]; then
+  echo "Database has the pre-split layout — moving each service into its own schema..."
+  DB_SERVICES=(auth-service listing-service blog-service inquiry-service payment-service)
+  for d in "${DB_SERVICES[@]}"; do
+    kubectl -n automarket scale deploy "$d" --replicas=0 2>/dev/null || true
+  done
+  for d in "${DB_SERVICES[@]}"; do
+    kubectl -n automarket wait --for=delete pod -l "app=$d" --timeout=180s 2>/dev/null || true
+  done
+
+  BACKUP="${BACKUP_DIR:-$HOME/automarket-backups}/pre-schema-split-$(date +%Y%m%d-%H%M%S).sql"
+  mkdir -p "$(dirname "$BACKUP")"
+  kubectl -n automarket exec postgres-0 -- pg_dump -U automarket -d automarket > "$BACKUP"
+  echo "  backup: $BACKUP"
+
+  if ! "${PSQL[@]}" < "$PROJECT_ROOT/db/schema-split/cutover.sql"; then
+    echo "  ✗ cutover failed and rolled back — the database is unchanged."
+    echo "    The five database services are left at zero replicas. Fix the error"
+    echo "    above and re-run deploy.sh."
+    exit 1
+  fi
+  echo "  ✓ every service now has its own schema"
+fi
 
 # ── 5. Deploy application services ─────────────────────────────
 echo "Deploying application services..."
-kubectl apply -f "$SCRIPT_DIR/services/uploads-pvc.yml"
-kubectl apply -f "$SCRIPT_DIR/services/blog-uploads-pvc.yml"
 kubectl apply -f "$SCRIPT_DIR/services/auth-service-deployment.yml"
 kubectl apply -f "$SCRIPT_DIR/services/auth-service-service.yml"
 kubectl apply -f "$SCRIPT_DIR/services/listing-service-deployment.yml"
@@ -156,6 +197,45 @@ if [ "${APPLY_NETWORK_POLICIES:-0}" = "1" ]; then
   kubectl apply -f "$SCRIPT_DIR/networkpolicy.yml"
 else
   echo "Skipping network policies (set APPLY_NETWORK_POLICIES=1 to apply)."
+fi
+
+# ── 6d. Move uploads off the old PVCs (one-off) ────────────────
+# Clusters deployed before the switch to MinIO still have the uploads on
+# listing-uploads-pvc and blog-uploads-pvc. Wait until neither deployment has a
+# pod left that mounts them, copy them into the bucket, and delete the PVCs only
+# if the copy checked out. A failure leaves the PVCs in place and the deploy
+# carries on; re-running deploy.sh retries the move.
+migrate_uploads() {
+  # An old pod may still be writing to a PVC, so copying before the rollout
+  # finishes could miss files that the PVC delete would then destroy.
+  if ! kubectl -n automarket rollout status deploy/listing-service --timeout=300s ||
+     ! kubectl -n automarket rollout status deploy/blog-service --timeout=300s; then
+    echo "  ⚠ listing/blog rollout not finished — upload migration skipped, re-run deploy.sh."
+    return
+  fi
+
+  kubectl -n automarket delete job migrate-uploads --ignore-not-found=true
+  kubectl apply -f "$SCRIPT_DIR/migrations/migrate-uploads-job.yml"
+  if ! kubectl -n automarket wait --for=condition=complete job/migrate-uploads --timeout=600s; then
+    echo "  ⚠ upload migration did not complete — PVCs kept. See:"
+    echo "    kubectl -n automarket logs job/migrate-uploads"
+    return
+  fi
+
+  kubectl -n automarket logs job/migrate-uploads --tail=5
+  kubectl -n automarket delete job migrate-uploads
+  kubectl -n automarket delete pvc listing-uploads-pvc blog-uploads-pvc
+  echo "  ✓ uploads moved to MinIO, old PVCs deleted"
+}
+
+HAS_LISTING_PVC=$(kubectl -n automarket get pvc listing-uploads-pvc -o name 2>/dev/null || true)
+HAS_BLOG_PVC=$(kubectl -n automarket get pvc blog-uploads-pvc -o name 2>/dev/null || true)
+if [ -n "$HAS_LISTING_PVC" ] && [ -n "$HAS_BLOG_PVC" ]; then
+  echo "Migrating uploads from the old PVCs to MinIO..."
+  migrate_uploads
+elif [ -n "$HAS_LISTING_PVC$HAS_BLOG_PVC" ]; then
+  echo "⚠ Only one of listing-uploads-pvc / blog-uploads-pvc exists — skipping upload migration."
+  echo "  Recreate the missing one empty (manifests are in git history under k8s/services/) and re-run."
 fi
 
 # ── 7. Print status ───────────────────────────────────────────

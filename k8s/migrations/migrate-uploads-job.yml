@@ -1,0 +1,76 @@
+# Moves uploads from the old per-service PVCs into the MinIO bucket (§11.1).
+#
+# Before the switch to S3, listing-service and blog-service wrote to /app/uploads
+# on listing-uploads-pvc and blog-uploads-pvc. The storage key was the path under
+# that directory (listings/<id>/..., blog/covers/<id>/..., blog/content/...), and
+# the S3 key is the same string, so copying each tree to the bucket root keeps
+# every URL already stored in the database working unchanged.
+#
+# Run by deploy.sh only when the old PVCs still exist, and only after both
+# deployments have rolled out without them, so nothing is writing to the source.
+# The copy is checked before the Job succeeds; deploy.sh deletes the PVCs only on
+# success. --overwrite makes a re-run after a partial copy safe: keys contain a
+# UUID, so an object of the same name can only be this same file.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate-uploads
+  namespace: automarket
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: mc
+          image: minio/mc:RELEASE.2024-06-12T14-34-03Z
+          env:
+            - name: S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: automarket-storage-secret
+                  key: S3_ACCESS_KEY
+            - name: S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: automarket-storage-secret
+                  key: S3_SECRET_KEY
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              mc alias set local http://minio:9000 "$S3_ACCESS_KEY" "$S3_SECRET_KEY"
+              for src in /old/listing /old/blog; do
+                echo "Copying $src"
+                mc mirror --overwrite "$src" local/uploads
+                # '<' = only in the source, '!' = differs. Objects only in the
+                # bucket ('>') are expected: the other service's files and any
+                # uploads made since the switch. No grep in the mc image.
+                mc diff "$src" local/uploads > /tmp/diff || true
+                missing=0
+                while read -r flag path; do
+                  case "$flag" in "<"*|"!"*) missing=$((missing + 1)); echo "not copied: $path" ;; esac
+                done < /tmp/diff
+                if [ "$missing" != "0" ]; then
+                  echo "$missing file(s) from $src did not arrive intact"
+                  exit 1
+                fi
+              done
+              echo "uploads migrated"
+          volumeMounts:
+            - name: listing-uploads
+              mountPath: /old/listing
+              readOnly: true
+            - name: blog-uploads
+              mountPath: /old/blog
+              readOnly: true
+      volumes:
+        - name: listing-uploads
+          persistentVolumeClaim:
+            claimName: listing-uploads-pvc
+            readOnly: true
+        - name: blog-uploads
+          persistentVolumeClaim:
+            claimName: blog-uploads-pvc
+            readOnly: true

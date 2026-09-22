@@ -3,7 +3,6 @@ package com.automarket.gateway.filter;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
@@ -18,8 +17,8 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
-import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
+import jakarta.annotation.PostConstruct;
+import java.security.PublicKey;
 import java.util.List;
 import java.util.Set;
 
@@ -78,8 +77,20 @@ public class JwtValidationFilter implements GlobalFilter, Ordered {
             "/actuator/prometheus"
     );
 
-    @Value("${automarket.jwt.secret}")
-    private String jwtSecret;
+    // The gateway is the only component that verifies a signature, and it needs
+    // nothing but the public half to do it. Under the previous HS256 scheme this
+    // was the shared signing key, which every service mounted and any one of them
+    // could have used to mint an admin token.
+    @Value("${automarket.jwt.public-key}")
+    private String publicKeyPem;
+
+    private PublicKey verificationKey;
+
+    @PostConstruct
+    void loadKey() {
+        this.verificationKey = RsaKeys.publicKey(publicKeyPem);
+        log.info("JWT validation initialised with RS256 (public key only)");
+    }
 
     @Value("${automarket.gateway.shared-secret:}")
     private String gatewaySharedSecret;
@@ -117,7 +128,7 @@ public class JwtValidationFilter implements GlobalFilter, Ordered {
 
         try {
             Claims claims = Jwts.parser()
-                    .verifyWith(getSigningKey())
+                    .verifyWith(verificationKey)
                     .build()
                     .parseSignedClaims(token)
                     .getPayload();
@@ -162,10 +173,6 @@ public class JwtValidationFilter implements GlobalFilter, Ordered {
         if (method == HttpMethod.GET && path.startsWith("/api/v1/blog/") && !path.contains("/images") && !path.contains("/cover-image")) return true;
         if (method == HttpMethod.GET && path.startsWith("/api/v1/users/") && !path.equals("/api/v1/users/me")) return true;
         return PUBLIC_PREFIXES.stream().anyMatch(path::startsWith);
-    }
-
-    private SecretKey getSigningKey() {
-        return Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
     }
 
     @Override

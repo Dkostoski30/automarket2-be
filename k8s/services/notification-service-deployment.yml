@@ -33,20 +33,22 @@ spec:
                 name: automarket-config
             - secretRef:
                 name: automarket-secret
+            - secretRef:
+                name: automarket-mail-secret
           startupProbe:
             httpGet:
-              path: /actuator/health
+              path: /actuator/health/readiness
               port: 8087
             failureThreshold: 30
             periodSeconds: 10
           readinessProbe:
             httpGet:
-              path: /actuator/health
+              path: /actuator/health/readiness
               port: 8087
             periodSeconds: 10
           livenessProbe:
             httpGet:
-              path: /actuator/health
+              path: /actuator/health/liveness
               port: 8087
             initialDelaySeconds: 30
             periodSeconds: 15
