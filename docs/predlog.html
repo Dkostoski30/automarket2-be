@@ -1,0 +1,859 @@
+<!doctype html>
+<html lang="mk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>html{color-scheme:light dark}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Предлог за AutoMarket</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Spectral:ital,wght@0,400;0,500&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+  :root {
+    --bg: #ECEEF1;
+    --surface: #FFFFFF;
+    --surface-2: #F4F6F8;
+    --ink: #15181D;
+    --muted: #5B646F;
+    --faint: #8C96A2;
+    --line: #D3D9E0;
+    --line-soft: #E4E9ED;
+    --accent: #1F4ED8;
+    --accent-soft: #E2E9FB;
+    --old: #7C8795;
+    --old-soft: #E6E9EC;
+    --bad: #A33A2A;
+    --ok: #1F6B4A;
+
+    --display: 'Archivo', 'Helvetica Neue', Arial, sans-serif;
+    --body: 'Spectral', Georgia, 'Times New Roman', serif;
+    --mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #10131A;
+      --surface: #171B23;
+      --surface-2: #1C212A;
+      --ink: #E6EAEF;
+      --muted: #98A3B0;
+      --faint: #6C7784;
+      --line: #272E39;
+      --line-soft: #202630;
+      --accent: #7FA4FF;
+      --accent-soft: #1A2335;
+      --old: #6B7684;
+      --old-soft: #1B1F26;
+      --bad: #E08270;
+      --ok: #6BBF95;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #10131A;
+    --surface: #171B23;
+    --surface-2: #1C212A;
+    --ink: #E6EAEF;
+    --muted: #98A3B0;
+    --faint: #6C7784;
+    --line: #272E39;
+    --line-soft: #202630;
+    --accent: #7FA4FF;
+    --accent-soft: #1A2335;
+    --old: #6B7684;
+    --old-soft: #1B1F26;
+    --bad: #E08270;
+    --ok: #6BBF95;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  [data-lang="mk"] .en { display: none; }
+  [data-lang="en"] .mk { display: none; }
+
+  /* ─── bar ─────────────────────────────────────────────────── */
+  .bar {
+    position: sticky;
+    top: env(safe-area-inset-top, 0px);
+    z-index: 20;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
+  }
+  .bar-in {
+    max-width: 58rem;
+    margin: 0 auto;
+    padding: 9px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .bar-title {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.02em;
+    margin-right: auto;
+  }
+  .bar-title span { color: var(--faint); font-weight: 500; }
+  .seg {
+    display: inline-flex;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    overflow: hidden;
+    background: var(--surface);
+  }
+  .seg button {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    padding: 4px 10px;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
+  .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+  .wrap {
+    max-width: 58rem;
+    margin: 0 auto;
+    padding-inline: 16px;
+    padding-block: 32px 56px;
+  }
+
+  h1 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: clamp(25px, 5.6vw, 36px);
+    line-height: 1.1;
+    letter-spacing: -0.015em;
+    margin: 0 0 10px;
+    text-wrap: balance;
+  }
+  .lede { font-size: 16.5px; color: var(--muted); max-width: 32rem; margin: 0; }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin: 0 0 12px;
+  }
+
+  /* ─── panel ───────────────────────────────────────────────── */
+  .panel {
+    padding: 26px 0 28px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .panel.done { opacity: 0.5; }
+  .head {
+    display: flex;
+    align-items: baseline;
+    gap: 11px;
+    margin-bottom: 4px;
+  }
+  .num {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+  .panel h3 {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 20px;
+    letter-spacing: -0.012em;
+    margin: 0;
+    text-wrap: balance;
+    flex: 1;
+  }
+  .tick {
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--faint);
+    font-size: 10px; line-height: 1;
+    cursor: pointer;
+    display: grid; place-items: center;
+    padding: 0;
+    flex: none;
+  }
+  .panel.done .tick { background: var(--ok); border-color: var(--ok); color: #fff; }
+  .tick:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .cue {
+    margin: 0;
+    font-size: 16.5px;
+    color: var(--muted);
+    max-width: 36rem;
+  }
+  .cue b { color: var(--ink); font-weight: 500; }
+  .viz { margin-top: 18px; }
+
+  /* ─── shared box language ─────────────────────────────────── */
+  .box {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    padding: 9px 12px;
+    font-family: var(--display);
+    font-size: 12.5px;
+    font-weight: 600;
+    text-align: center;
+    color: var(--ink);
+  }
+  .box small {
+    display: block;
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 9.5px;
+    color: var(--faint);
+    margin-top: 3px;
+    letter-spacing: 0.02em;
+  }
+  .box.hot { border-color: var(--accent); background: var(--accent-soft); }
+  .box.cold { border-color: var(--old); background: var(--old-soft); color: var(--muted); }
+
+  /* ─── 01 before / after ───────────────────────────────────── */
+  .ba {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 14px;
+    align-items: center;
+  }
+  .stack { display: flex; flex-direction: column; gap: 5px; }
+  .stack-cap {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin-bottom: 3px;
+  }
+  .big-arrow {
+    font-family: var(--display);
+    font-size: 22px;
+    color: var(--accent);
+    text-align: center;
+  }
+  .v-only { display: none; }
+
+  /* ─── 02 service grid ─────────────────────────────────────── */
+  .grid6 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+    gap: 6px;
+  }
+
+  /* ─── 03 + 04: plain illustrations ───────────────────────── */
+  .tpair {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(188px, 1fr));
+    gap: 8px;
+  }
+  .tcard {
+    border: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .tcard > header {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--faint);
+    padding: 6px 11px;
+    border-bottom: 1px solid var(--line-soft);
+    background: var(--surface-2);
+  }
+  .tcard .trow { padding: 9px 11px; }
+  .tcard .tname {
+    font-family: var(--display);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .tcard .cols {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 4px;
+    line-height: 1.5;
+  }
+  .tcard .cols b { color: var(--ink); font-weight: 500; }
+  .tcard.copy { border-color: var(--accent); }
+  .tcard.copy > header { color: var(--accent); background: var(--accent-soft); }
+
+  .plain {
+    font-size: 15.5px;
+    color: var(--muted);
+    margin: 15px 0 0;
+    max-width: 36rem;
+  }
+  .plain b { color: var(--ink); font-weight: 500; }
+
+  .sendrow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 11px;
+  }
+  .sendrow .box { min-width: 88px; }
+  .msg {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    border: 1px dashed var(--line);
+    background: var(--surface);
+    padding: 5px 9px;
+  }
+  .chevron { font-family: var(--mono); font-size: 12px; color: var(--faint); }
+
+  /* numbered steps */
+  .steps { margin: 0; padding: 0; list-style: none; counter-reset: s; }
+  .steps li {
+    counter-increment: s;
+    display: grid;
+    grid-template-columns: 22px 1fr;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line-soft);
+    font-size: 15.5px;
+  }
+  .steps li::before {
+    content: counter(s);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--faint);
+    padding-top: 4px;
+  }
+  .steps li:last-child { border-bottom: 0; }
+  .steps .state {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    display: block;
+    margin-top: 2px;
+  }
+  .ann {
+    margin: 10px 0 0;
+    padding-left: 12px;
+    border-left: 2px solid color-mix(in srgb, var(--bad) 45%, transparent);
+    font-size: 15px;
+    color: var(--muted);
+    max-width: 36rem;
+  }
+
+  .dbcard {
+    border: 1px solid var(--accent);
+    background: var(--surface);
+    margin-top: 12px;
+  }
+  .dbcard > header {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: var(--accent-soft);
+    padding: 6px 11px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .dbcard .inner { padding: 10px 11px; display: flex; gap: 7px; flex-wrap: wrap; }
+  .dbcard .inner .box { flex: 1 1 140px; }
+
+  .caption {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--faint);
+    margin-top: 10px;
+  }
+
+  /* ─── 05 checks ───────────────────────────────────────────── */
+  .checks {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(176px, 1fr));
+    gap: 7px;
+  }
+  .check {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    padding: 13px 14px;
+  }
+  .check span {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--faint);
+    display: block;
+    margin-bottom: 6px;
+  }
+  .check b {
+    font-family: var(--display);
+    font-size: 13.5px;
+    font-weight: 600;
+    display: block;
+    color: var(--ink);
+  }
+  .check i {
+    font-family: var(--mono);
+    font-style: normal;
+    font-size: 12px;
+    color: var(--accent);
+    display: block;
+    margin-top: 7px;
+  }
+
+  /* ─── chips ───────────────────────────────────────────────── */
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    font-family: var(--mono);
+    font-size: 11px;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: var(--surface);
+  }
+  .chip.out { text-decoration: line-through; color: var(--faint); }
+
+  /* ─── closer ──────────────────────────────────────────────── */
+  .closer {
+    margin-top: 26px;
+    border-left: 3px solid var(--accent);
+    background: var(--surface);
+    border-top: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    padding: 16px 19px;
+  }
+  .closer span {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 7px;
+  }
+  .closer p { margin: 0; font-size: 16.5px; max-width: 38rem; }
+
+  h2 {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin: 44px 0 0;
+    padding-bottom: 7px;
+    border-bottom: 1px solid var(--line);
+  }
+  .qa {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(246px, 1fr));
+    gap: 1px;
+    background: var(--line-soft);
+    border: 1px solid var(--line-soft);
+    margin-top: 18px;
+  }
+  .q { background: var(--surface); padding: 15px 17px; }
+  .q h4 {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 13.5px;
+    margin: 0 0 5px;
+  }
+  .q h4::before { content: "— "; color: var(--accent); }
+  .q p { margin: 0; font-size: 14.5px; color: var(--muted); }
+
+  footer {
+    margin-top: 38px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--faint);
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  @media (max-width: 620px) {
+    .ba { grid-template-columns: 1fr; }
+    .h-only { display: none; }
+    .v-only { display: inline; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+
+</head>
+<body>
+<div class="bar">
+  <div class="bar-in">
+    <div class="bar-title">AutoMarket <span>· предлог</span></div>
+    <div class="seg" role="group" aria-label="Јазик / Language">
+      <button id="btn-mk" aria-pressed="true">МК</button>
+      <button id="btn-en" aria-pressed="false">EN</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap" id="app" data-lang="mk">
+
+  <p class="eyebrow mk">Шест точки · зборувај над сликите</p>
+  <p class="eyebrow en">Six beats · talk over the visuals</p>
+
+  <h1 class="mk">Имам монолит. Предлагам да го разделам.</h1>
+  <h1 class="en">I have a monolith. I'm proposing to split it.</h1>
+
+  <p class="lede mk">Стариот .NET проект со Razor Pages е основата — од него знам што прави системот. Темата е што се случува кога ќе го разделам на сервиси.</p>
+  <p class="lede en">The old .NET Razor Pages project is the baseline — it already tells me what the system does. The subject is what happens once I split it into services.</p>
+
+  <!-- 01 -->
+  <div class="panel" data-id="v1">
+    <div class="head">
+      <span class="num">01</span>
+      <h3 class="mk">Од каде почнувам</h3>
+      <h3 class="en">Where I'm starting from</h3>
+      <button class="tick" aria-label="изговорено">✓</button>
+    </div>
+    <p class="cue mk">Истата функционалност, <b>два пати различно изградена</b>. Стариот проект ми е основата за споредба.</p>
+    <p class="cue en">The same functionality, <b>built two different ways</b>. The old project is my baseline for comparison.</p>
+
+    <div class="viz ba">
+      <div>
+        <div class="stack-cap mk">постои денес</div>
+        <div class="stack-cap en">exists today</div>
+        <div class="stack">
+          <div class="box cold">.NET <small>Razor Pages</small></div>
+          <div class="box cold"><span class="mk">една апликација</span><span class="en">one application</span><small class="mk">сета логика заедно</small><small class="en">all logic together</small></div>
+          <div class="box cold"><span class="mk">една база</span><span class="en">one database</span><small>SQL</small></div>
+        </div>
+      </div>
+      <div class="big-arrow"><span class="h-only">→</span><span class="v-only">↓</span></div>
+      <div>
+        <div class="stack-cap mk">предлогот</div>
+        <div class="stack-cap en">the proposal</div>
+        <div class="stack">
+          <div class="box hot">Angular <small>SPA</small></div>
+          <div class="box hot">API Gateway <small>JWT · CORS</small></div>
+          <div class="box hot"><span class="mk">6 сервиси</span><span class="en">6 services</span><small class="mk">шема по сервис</small><small class="en">schema per service</small></div>
+          <div class="box hot">Kafka <small class="mk">настани</small><small class="en">events</small></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 02 -->
+  <div class="panel" data-id="v2">
+    <div class="head">
+      <span class="num">02</span>
+      <h3 class="mk">Поделбата е по домен</h3>
+      <h3 class="en">The split is by domain</h3>
+      <button class="tick" aria-label="изговорено">✓</button>
+    </div>
+    <p class="cue mk">Не по слоеви. Секој сервис <b>ги поседува своите табели</b> — во своја PostgreSQL шема.</p>
+    <p class="cue en">Not by layer. Each service <b>owns its own tables</b> — in its own PostgreSQL schema.</p>
+
+    <div class="viz grid6">
+      <div class="box"><span class="mk">Корисници</span><span class="en">Users</span><small>auth</small></div>
+      <div class="box"><span class="mk">Огласи</span><span class="en">Listings</span><small>listing</small></div>
+      <div class="box"><span class="mk">Блог</span><span class="en">Blog</span><small>blog</small></div>
+      <div class="box"><span class="mk">Разговори</span><span class="en">Messages</span><small>inquiry</small></div>
+      <div class="box"><span class="mk">Плаќања</span><span class="en">Payments</span><small>payment</small></div>
+      <div class="box"><span class="mk">Известувања</span><span class="en">Notifications</span><small class="mk">без база</small><small class="en">no db</small></div>
+    </div>
+  </div>
+
+  <!-- 03 -->
+  <div class="panel" data-id="v3">
+    <div class="head">
+      <span class="num">03</span>
+      <h3 class="mk">Податоците се поделени</h3>
+      <h3 class="en">The data is split up</h3>
+      <button class="tick" aria-label="изговорено">✓</button>
+    </div>
+    <p class="cue mk">Секој сервис има свои табели. Погледни што има, и што нема, сервисот за огласи.</p>
+    <p class="cue en">Each service has its own tables. Look at what the listings service has, and what it doesn't.</p>
+
+    <div class="viz">
+      <div class="tpair">
+        <div class="tcard">
+          <header class="mk">сервис: Корисници</header>
+          <header class="en">service: Users</header>
+          <div class="trow">
+            <div class="tname mk">табела „корисници“</div>
+            <div class="tname en">table "users"</div>
+            <div class="cols mk">id · <b>име</b> · <b>телефон</b> · email</div>
+            <div class="cols en">id · <b>name</b> · <b>phone</b> · email</div>
+          </div>
+        </div>
+        <div class="tcard">
+          <header class="mk">сервис: Огласи</header>
+          <header class="en">service: Listings</header>
+          <div class="trow">
+            <div class="tname mk">табела „огласи“</div>
+            <div class="tname en">table "listings"</div>
+            <div class="cols mk">id · марка · цена · <b>продавач_id</b></div>
+            <div class="cols en">id · make · price · <b>seller_id</b></div>
+          </div>
+        </div>
+      </div>
+
+      <p class="plain mk">Кога ќе отвориш оглас, треба да се види името и телефонот на продавачот. Сервисот за огласи го има само <b>продавач_id</b> — бројката. Името е во другата табела, во другиот сервис.</p>
+      <p class="plain en">When you open a listing, the seller's name and phone have to show. The listings service only has <b>seller_id</b> — a number. The name sits in the other table, in the other service.</p>
+
+      <p class="plain mk">Може да му го побара од сервисот за корисници секој пат. Но тогаш, ако тој сервис не работи, не се отвораат ни огласите. Затоа го правам обратно: при регистрација, сервисот за корисници праќа порака, а сервисот за огласи си го запишува тоа што му треба.</p>
+      <p class="plain en">It could ask the users service every single time. But then, if that service is down, listings stop opening too. So I do it the other way round: on registration the users service sends a message, and the listings service writes down what it needs.</p>
+
+      <div class="sendrow">
+        <div class="box"><span class="mk">Корисници</span><span class="en">Users</span></div>
+        <span class="chevron">┈┈▶</span>
+        <span class="msg mk">„корисник 41: Марко, 070…“</span>
+        <span class="msg en">"user 41: Marko, 070…"</span>
+        <span class="chevron">┈┈▶</span>
+        <div class="box"><span class="mk">Огласи</span><span class="en">Listings</span></div>
+      </div>
+
+      <div class="tpair" style="margin-top:8px">
+        <div class="tcard copy">
+          <header class="mk">сервис: Огласи · нова табела</header>
+          <header class="en">service: Listings · new table</header>
+          <div class="trow">
+            <div class="tname mk">табела „продавачи“</div>
+            <div class="tname en">table "sellers"</div>
+            <div class="cols mk">id · <b>име</b> · <b>телефон</b></div>
+            <div class="cols en">id · <b>name</b> · <b>phone</b></div>
+          </div>
+        </div>
+      </div>
+
+      <p class="caption mk">сега огласот се отвора само од своите табели — не прашува никого</p>
+      <p class="caption en">now a listing opens from its own tables only — it asks nobody</p>
+    </div>
+  </div>
+
+  <!-- 04 -->
+  <div class="panel" data-id="v4">
+    <div class="head">
+      <span class="num">04</span>
+      <h3 class="mk">Што ако пораката не се прати</h3>
+      <h3 class="en">What if the message doesn't get sent</h3>
+      <button class="tick" aria-label="изговорено">✓</button>
+    </div>
+    <p class="cue mk">Марко си го менува телефонот. Две работи треба да се случат, една по друга.</p>
+    <p class="cue en">Marko changes his phone number. Two things have to happen, one after the other.</p>
+
+    <div class="viz">
+      <ol class="steps">
+        <li>
+          <div>
+            <span class="mk">Сервисот за корисници го запишува новиот телефон во својата табела.</span>
+            <span class="en">The users service writes the new phone number into its table.</span>
+            <span class="state mk">готово ✓</span>
+            <span class="state en">done ✓</span>
+          </div>
+        </li>
+        <li>
+          <div>
+            <span class="mk">Истиот сервис праќа порака, за да го дознае и сервисот за огласи.</span>
+            <span class="en">The same service sends a message, so the listings service finds out too.</span>
+            <span class="state mk">тука може да падне ✕</span>
+            <span class="state en">this is where it can fail ✕</span>
+          </div>
+        </li>
+      </ol>
+
+      <p class="ann mk">Чекор 1 веќе е направен и не се враќа назад. Значи телефонот е нов во еден сервис, а стар во другиот — и ништо никаде не пишува што тоа се случило.</p>
+      <p class="ann en">Step 1 already happened and doesn't get undone. So the phone is new in one service and old in the other — and nothing anywhere records that this happened.</p>
+
+      <p class="plain mk">Решението е да не ги разделувам. Пораката се запишува <b>во истата база, во истиот момент</b> како и телефонот — како обичен ред во табела со незапратени пораки. Запишувањето е едно: или двете, или ниедно.</p>
+      <p class="plain en">The fix is to not separate them. The message is written <b>into the same database, at the same moment</b> as the phone number — as an ordinary row in a table of unsent messages. It's a single write: either both, or neither.</p>
+
+      <div class="dbcard">
+        <header class="mk">едно запишување во базата</header>
+        <header class="en">one write to the database</header>
+        <div class="inner">
+          <div class="box"><span class="mk">нов телефон</span><span class="en">new phone number</span><small class="mk">во табелата „корисници“</small><small class="en">in the "users" table</small></div>
+          <div class="box"><span class="mk">порака за праќање</span><span class="en">message to send</span><small class="mk">во табелата „незапратени“</small><small class="en">in the "unsent" table</small></div>
+        </div>
+      </div>
+
+      <p class="plain mk">Потоа мала програма ја чита таа табела и ги праќа пораките. Ако Kafka не работи, пораката си стои и чека; кога ќе се врати, се праќа. Ништо не се губи — само се задржува.</p>
+      <p class="plain en">Then a small program reads that table and sends the messages. If Kafka is down the message just sits and waits; when it comes back, it goes out. Nothing is lost — it's only delayed.</p>
+
+      <p class="caption mk">а ако истата порака се прати два пати, сервисот за огласи препознава што веќе ја примил</p>
+      <p class="caption en">and if the same message goes out twice, the listings service recognises it already got it</p>
+    </div>
+  </div>
+
+  <!-- 05 -->
+  <div class="panel" data-id="v5">
+    <div class="head">
+      <span class="num">05</span>
+      <h3 class="mk">Како ќе го измерам</h3>
+      <h3 class="en">How I'll measure it</h3>
+      <button class="tick" aria-label="изговорено">✓</button>
+    </div>
+    <p class="cue mk">Не „еве, работи“ — <b>три проверки со број на крајот</b>.</p>
+    <p class="cue en">Not "look, it works" — <b>three checks with a number at the end</b>.</p>
+
+    <div class="viz checks">
+      <div class="check">
+        <span class="mk">проверка 1</span><span class="en">check 1</span>
+        <b class="mk">Гасам Kafka среде операција</b>
+        <b class="en">Kill Kafka mid-operation</b>
+        <i class="mk">→ 0 изгубени настани</i>
+        <i class="en">→ 0 events lost</i>
+      </div>
+      <div class="check">
+        <span class="mk">проверка 2</span><span class="en">check 2</span>
+        <b class="mk">Праќам ист настан два пати</b>
+        <b class="en">Deliver the same event twice</b>
+        <i class="mk">→ 1 известување</i>
+        <i class="en">→ 1 notification</i>
+      </div>
+      <div class="check">
+        <span class="mk">проверка 3</span><span class="en">check 3</span>
+        <b class="mk">Оптоварување врз двете верзии</b>
+        <b class="en">Load against both versions</b>
+        <i class="mk">→ монолит vs. сервиси</i>
+        <i class="en">→ monolith vs. services</i>
+      </div>
+    </div>
+  </div>
+
+  <!-- 06 -->
+  <div class="panel" data-id="v6">
+    <div class="head">
+      <span class="num">06</span>
+      <h3 class="mk">Обемот — што не влегува</h3>
+      <h3 class="en">Scope — what's out</h3>
+      <button class="tick" aria-label="изговорено">✓</button>
+    </div>
+    <p class="cue mk">Функционалноста ја држам мала намерно. Тежината е на едно место.</p>
+    <p class="cue en">I'm keeping the functionality small on purpose. The weight sits in one place.</p>
+
+    <div class="viz">
+      <div class="chips">
+        <span class="chip mk">✓ Docker + Kubernetes локално</span>
+        <span class="chip en">✓ Docker + Kubernetes, local</span>
+        <span class="chip mk">✓ Prometheus + Grafana</span>
+        <span class="chip en">✓ Prometheus + Grafana</span>
+        <span class="chip mk">✓ CI (GitHub Actions)</span>
+        <span class="chip en">✓ CI (GitHub Actions)</span>
+      </div>
+      <div class="chips" style="margin-top:7px">
+        <span class="chip out mk">база по сервис</span>
+        <span class="chip out en">database per service</span>
+        <span class="chip out mk">service mesh</span>
+        <span class="chip out en">service mesh</span>
+        <span class="chip out mk">хостинг во облак</span>
+        <span class="chip out en">cloud hosting</span>
+        <span class="chip out mk">богата функционалност</span>
+        <span class="chip out en">rich feature set</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="closer">
+    <span class="mk">заврши со ова</span>
+    <span class="en">close with this</span>
+    <p class="mk">„Стариот .NET проект ќе го преработам, но тој ми останува и како основа за споредба. Ако темата ви изгледа во ред, остатокот ми е мерењата и пишувањето.“</p>
+    <p class="en">"I'll rework the old .NET project, but it also stays as my basis for comparison. If the subject looks right to you, what's left for me is the measurements and the writing."</p>
+  </div>
+
+  <h2 class="mk">Ако те притиснат</h2>
+  <h2 class="en">If they press</h2>
+
+  <div class="qa">
+    <div class="q">
+      <h4 class="mk">Зошто повторно го пишуваш истото?</h4>
+      <h4 class="en">Why rewrite the same thing?</h4>
+      <p class="mk">Затоа што функционалноста ја знам — па можам да ја споредувам архитектурата, а не да учам нов домен.</p>
+      <p class="en">Because I already know the functionality — so I can compare architectures instead of learning a new domain.</p>
+    </div>
+    <div class="q">
+      <h4 class="mk">Зошто Java, а не .NET?</h4>
+      <h4 class="en">Why Java and not .NET?</h4>
+      <p class="mk">Spring Boot со Spring Cloud има готов gateway и Kafka интеграција, и е тоа што ќе го работам понатаму.</p>
+      <p class="en">Spring Boot with Spring Cloud gives me the gateway and Kafka integration out of the box, and it's what I'll be working in.</p>
+    </div>
+    <div class="q">
+      <h4 class="mk">Монолит би бил доволен?</h4>
+      <h4 class="en">Wouldn't a monolith do?</h4>
+      <p class="mk">За функционалноста — да, и веќе го имам. Но тогаш ја нема работата: дистрибуираниот дел е темата.</p>
+      <p class="en">For the functionality, yes — I already have one. But then there's no work left: the distributed part is the subject.</p>
+    </div>
+    <div class="q">
+      <h4 class="mk">Каде е придонесот?</h4>
+      <h4 class="en">Where's the contribution?</h4>
+      <p class="mk">Споредба на истата апликација во две архитектури, со измерено однесување кога нешто паѓа.</p>
+      <p class="en">A comparison of the same application in two architectures, with measured behaviour under failure.</p>
+    </div>
+    <div class="q">
+      <h4 class="mk">Не е ли обемот преголем?</h4>
+      <h4 class="en">Isn't the scope too large?</h4>
+      <p class="mk">Затоа и кажувам што не влегува. Ништо ново во функционалност — само преработка и мерење.</p>
+      <p class="en">That's why I say what's out. No new functionality — only the rework and the measurements.</p>
+    </div>
+    <div class="q">
+      <h4 class="mk">Зошто Kafka, а не REST повици?</h4>
+      <h4 class="en">Why Kafka and not REST calls?</h4>
+      <p class="mk">Со директен повик, ако другиот сервис е паднат паѓа и моето барање. Со настани, барањето поминува.</p>
+      <p class="en">With a direct call, if the other service is down my request goes down with it. With events, the request completes.</p>
+    </div>
+  </div>
+
+  <footer>
+    <span class="mk">6 точки · основа: .NET Razor Pages монолит</span>
+    <span class="en">6 beats · baseline: .NET Razor Pages monolith</span>
+    <span class="mk">домен: огласи за автомобили</span>
+    <span class="en">domain: car listings</span>
+  </footer>
+</div>
+
+<script>
+  (function () {
+    var app = document.getElementById('app');
+    var mk = document.getElementById('btn-mk');
+    var en = document.getElementById('btn-en');
+
+    function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+    function read(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+
+    function setLang(lang) {
+      app.dataset.lang = lang;
+      mk.setAttribute('aria-pressed', String(lang === 'mk'));
+      en.setAttribute('aria-pressed', String(lang === 'en'));
+      store('am-lang', lang);
+    }
+    mk.addEventListener('click', function () { setLang('mk'); });
+    en.addEventListener('click', function () { setLang('en'); });
+
+    var saved = read('am-lang');
+    if (saved === 'en' || saved === 'mk') setLang(saved);
+
+    document.querySelectorAll('.panel').forEach(function (p) {
+      var key = 'am-v-' + p.dataset.id;
+      if (read(key) === '1') p.classList.add('done');
+      p.querySelector('.tick').addEventListener('click', function () {
+        var done = p.classList.toggle('done');
+        store(key, done ? '1' : '0');
+      });
+    });
+  })();
+</script>
+</body>
+</html>

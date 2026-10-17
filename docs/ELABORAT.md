@@ -6,25 +6,31 @@
 
 ## 1. Опис на апликацијата
 
-AutoMarket е REST API платформа за онлајн продажба и купување на автомобили, изградена со **Spring Boot 3.2.3** и **Java 21**. Апликацијата е реализирана како **микросервисна архитектура** составена од 7 независни сервиси, API Gateway, и 4 инфраструктурни компоненти. Системот поддржува CRUD операции за огласи, корисници, блог објави, пораки меѓу купувач и продавач, Stripe плаќања, и известувања преку email.
+AutoMarket е REST API платформа за онлајн продажба и купување на автомобили, изградена со **Spring Boot 3.2.3** и **Java 21**. Апликацијата е реализирана како **микросервисна архитектура** составена од 6 независни бизнис сервиси, API Gateway, и инфраструктурни компоненти (PostgreSQL, Redis, Kafka, MinIO, MailHog). Системот поддржува CRUD операции за огласи, корисници, блог објави, разговори меѓу купувач и продавач, Stripe плаќања, и известувања преку email.
 
-Како база на податоци се користи **PostgreSQL 16** со JPA/Hibernate ORM за пристап до податоците. Конфигурацијата е екстернализирана преку **ConfigMap** и **Secret** ресурси во Kubernetes, а environment variables се користат за сите сервиси. За мониторинг се користи **Prometheus** и **Grafana**, а за асинхрона комуникација меѓу сервисите **RabbitMQ**.
+Како база на податоци се користи **PostgreSQL 16** со JPA/Hibernate ORM. Секој сервис поседува **своја PostgreSQL шема** во заедничка инстанца — со сопствена Flyway history табела и `search_path` ограничен само на неговата шема, така што ниту еден сервис не чита туѓи табели. Конфигурацијата е екстернализирана преку **ConfigMap** и **Secret** ресурси во Kubernetes. За мониторинг се користи **Prometheus** и **Grafana**, а за асинхрона комуникација меѓу сервисите **Apache Kafka**.
 
 ### Технологии
 
 | Категорија | Технологија |
 |---|---|
 | Јазик / Framework | Java 21, Spring Boot 3.2.3 |
-| API Gateway | Spring Cloud Gateway |
-| База на податоци | PostgreSQL 16 Alpine |
-| Кеширање | Redis 7 Alpine |
-| Асинхрони настани | RabbitMQ 3 (AMQP) |
+| API Gateway | Spring Cloud Gateway 2023.0.1 |
+| База на податоци | PostgreSQL 16 Alpine (шема по сервис) |
+| Миграции | Flyway (по една history табела за секој сервис) |
+| Кеширање / Rate limiting | Redis 7 Alpine |
+| Асинхрони настани | Apache Kafka 3.7 (KRaft, без ZooKeeper) |
+| Складирање слики | MinIO (S3-компатибилен) / AWS S3 SDK |
+| Автентикација | Spring Security + JWT (RS256, JJWT 0.12.5) |
 | Email (dev) | MailHog |
 | Мониторинг | Prometheus + Grafana |
+| Документација | SpringDoc OpenAPI 2.3 (агрегиран Swagger UI) |
 | Контејнеризација | Docker, Docker Compose |
 | Оркестрација | Kubernetes (k3d) |
+| GitOps | ArgoCD |
 | CI/CD | GitHub Actions |
-| Плаќања | Stripe API |
+| Плаќања | Stripe API 24.3.0 |
+| Frontend | Angular 19 (одделен репозиториум, Nginx) |
 
 ---
 
@@ -34,22 +40,23 @@ AutoMarket е REST API платформа за онлајн продажба и 
 
 ```
                                     ┌─────────────────┐
-                                    │   Frontend (FE)  │
-                                    │   Angular :4200  │
+                                    │   Frontend (FE) │
+                                    │   Angular 19    │
                                     └────────┬────────┘
                                              │
                                     ┌────────▼────────┐
-                              ┌─────│  NGINX Ingress   │─────┐
-                              │     │ automarket.local  │     │
+                              ┌─────│  NGINX Ingress  │─────┐
+                              │     │automarket.local │     │
                               │     └────────┬────────┘     │
                               │              │              │
                          /api, /uploads      │           /  │
                               │              │              │
                      ┌────────▼────────┐     │    ┌────────▼────────┐
-                     │   API Gateway    │     │    │    Frontend     │
+                     │   API Gateway   │     │    │    Frontend     │
                      │   :8080         │     │    │    :80 (nginx)  │
-                     │  JWT валидација  │     │    └─────────────────┘
+                     │  JWT валидација │     │    └─────────────────┘
                      │  CORS, рутирање │     │
+                     │  Rate limiting  │     │
                      └──┬──┬──┬──┬──┬──┘
                         │  │  │  │  │
            ┌────────────┘  │  │  │  └────────────┐
@@ -63,17 +70,24 @@ AutoMarket е REST API платформа за онлајн продажба и 
           │            │            │            │            │
           └─────┬──────┴──────┬─────┴──────┬─────┴──────┬─────┘
                 │             │            │            │
-          ┌─────▼─────┐ ┌────▼─────┐ ┌────▼─────┐ ┌───▼────────────┐
-          │ PostgreSQL │ │  Redis   │ │ RabbitMQ │ │  Notification  │
-          │   :5432    │ │  :6379   │ │  :5672   │ │   Service      │
-          └────────────┘ └──────────┘ └──────────┘ │    :8087       │
-                                                   └───────┬────────┘
+        ┌───────▼──────┐ ┌────▼─────┐ ┌───▼──────┐ ┌───▼────────────┐
+        │  PostgreSQL  │ │  Redis   │ │  MinIO   │ │     Kafka      │
+        │   :5432      │ │  :6379   │ │  :9000   │ │    :9092       │
+        │ шема/сервис  │ │          │ │  слики   │ │ 4 topics + DLT │
+        └──────────────┘ └──────────┘ └──────────┘ └───────┬────────┘
                                                            │
-                                                    ┌──────▼──────┐
-                                                    │   MailHog   │
-                                                    │ SMTP :1025  │
-                                                    │ UI   :8025  │
-                                                    └─────────────┘
+                                                  ┌────────▼───────┐
+                                                  │  Notification  │
+                                                  │    Service     │
+                                                  │     :8087      │
+                                                  │   (без база)   │
+                                                  └───────┬────────┘
+                                                          │
+                                                   ┌──────▼──────┐
+                                                   │   MailHog   │
+                                                   │ SMTP :1025  │
+                                                   │ UI   :8025  │
+                                                   └─────────────┘
 ```
 
 ### Мулти-модулна структура (Maven)
@@ -82,16 +96,19 @@ AutoMarket е REST API платформа за онлајн продажба и 
 automarket-platform (parent POM)
 ├── automarket-common/           — Споделени DTO, исклучоци, PageResponse
 ├── automarket-security-common/  — GatewayAuthFilter за downstream сервиси
-├── automarket-storage/          — Апстракција за складирање слики (local/S3)
-├── automarket-events/           — RabbitMQ конфигурација и event DTO-а
+├── automarket-storage/          — Апстракција за складирање слики (local / S3-MinIO)
+├── automarket-events/           — Kafka конфигурација, topic имена и event DTO-а
+├── automarket-messaging/        — Transactional outbox + inbox (идемпотентност)
 ├── gateway/                     — Spring Cloud Gateway, порт 8080
 ├── auth-service/                — Корисници, улоги, JWT автентикација, порт 8081
 ├── listing-service/             — Огласи, слики, омилени, аналитика, референтни податоци, порт 8082
 ├── blog-service/                — Блог објави, порт 8083
-├── inquiry-service/             — Пораки купувач-продавач, порт 8084
+├── inquiry-service/             — Разговори купувач-продавач, порт 8084
 ├── payment-service/             — Stripe претплати, порт 8086
 └── notification-service/        — Event-driven email известувања, порт 8087
 ```
+
+Не постои `reference-service` — референтните податоци се спојени во `listing-service`.
 
 ---
 
@@ -99,8 +116,10 @@ automarket-platform (parent POM)
 
 API Gateway-от (Spring Cloud Gateway) е единствената влезна точка за сите клиентски барања. Тој ги извршува следните функции:
 
-- **JWT валидација** — го парсира JWT токенот и ги инјектира `X-User-Email`, `X-User-Id`, `X-User-Roles` хедерите кон downstream сервисите
+- **JWT валидација** — го валидира токенот со **RS256** (само јавен клуч) и ги инјектира `X-User-Email`, `X-User-Id`, `X-User-Roles` хедерите кон downstream сервисите
+- **Потпис на барањето** — додава `X-Gateway-Auth` хедер, HMAC потпис со `GATEWAY_SHARED_SECRET`
 - **CORS** — централизирана конфигурација за cross-origin барања
+- **Rate limiting** — Redis-based `RequestRateLimiter` (replenishRate 20, burstCapacity 40)
 - **Рутирање** — го препраќа секое барање кон соодветниот микросервис
 
 ### Табела на рути
@@ -117,27 +136,29 @@ API Gateway-от (Spring Cloud Gateway) е единствената влезна
 | `/api/v1/reference/**` | * | listing-service:8082 | Референтни податоци (марки, горива...) |
 | `/api/v1/admin/reference/**` | * | listing-service:8082 | Админ управување со референтни податоци |
 | `/api/v1/blog/**` | * | blog-service:8083 | Блог објави |
-| `/api/v1/inquiries/**` | * | inquiry-service:8084 | Пораки меѓу купувач и продавач |
+| `/api/v1/inquiries/**` | * | inquiry-service:8084 | Започнување разговор од оглас |
+| `/api/v1/conversations/**` | * | inquiry-service:8084 | Разговори и пораки |
 | `/api/v1/subscriptions/**` | * | payment-service:8086 | Stripe претплати |
 | `/api/v1/webhooks/**` | * | payment-service:8086 | Stripe webhook |
 | `/uploads/**` | GET | listing-service:8082 | Статички слики |
+| `/api-docs/{сервис}` | GET | сите сервиси | Агрегиран OpenAPI за Swagger UI |
 
 ### Безбедносен тек (Security Flow)
 
 ```
-┌────────┐     JWT токен     ┌─────────────┐  X-User-Email   ┌──────────────┐
-│ Клиент │ ───────────────► │  Gateway     │ ──────────────► │  Downstream  │
-│  (FE)  │                  │  :8080       │  X-User-Id      │   Сервис     │
-└────────┘                  │              │  X-User-Roles   │              │
-                            │ JwtValidation│                 │ GatewayAuth  │
-                            │    Filter    │                 │   Filter     │
-                            └──────────────┘                 └──────────────┘
+┌────────┐   JWT (RS256)   ┌─────────────┐  X-User-Email    ┌──────────────┐
+│ Клиент │ ──────────────► │   Gateway   │ ───────────────► │  Downstream  │
+│  (FE)  │                 │    :8080    │  X-User-Id       │    Сервис    │
+└────────┘                 │             │  X-User-Roles    │              │
+                           │JwtValidation│  X-Gateway-Auth  │ GatewayAuth  │
+                           │   Filter    │  (HMAC потпис)   │    Filter    │
+                           └─────────────┘                  └──────────────┘
 ```
 
 1. Клиентот испраќа JWT токен во `Authorization: Bearer <token>` хедерот
-2. Gateway-от го валидира токенот (HMAC-SHA256) и ги извлекува email, userId и roles
-3. Ги инјектира како доверливи хедери (`X-User-Email`, `X-User-Id`, `X-User-Roles`)
-4. Downstream сервисите преку `GatewayAuthFilter` ги читаат хедерите и го пополнуваат `SecurityContext`
+2. Gateway-от го валидира токенот (**RS256**, асиметрично — потпишува само `auth-service` со приватниот клуч, а gateway-от верификува со јавниот) и ги извлекува email, userId и roles
+3. Ги инјектира како хедери (`X-User-Email`, `X-User-Id`, `X-User-Roles`) и го потпишува барањето со `X-Gateway-Auth`
+4. Downstream сервисите преку `GatewayAuthFilter` **прво го проверуваат потписот**, па дури потоа им веруваат на хедерите и пополнуваат `SecurityContext` — така директен повик кон сервис што го обиколува gateway-от е невозможен
 5. Контролерите пристапуваат до автентицираниот корисник преку `@AuthenticationPrincipal String email`
 
 ---
@@ -158,7 +179,7 @@ API Gateway-от (Spring Cloud Gateway) е единствената влезна
 | PUT | `/api/v1/users/me/password` | Промена на лозинка |
 | GET | `/api/v1/admin/users` | Листа на сите корисници (пагинирана) |
 | PUT | `/api/v1/admin/users/{id}/roles` | Промена на улоги на корисник |
-| DELETE | `/api/v1/admin/users/{id}` | Мека бришење на корисник |
+| DELETE | `/api/v1/admin/users/{id}` | Меко бришење на корисник |
 | GET | `/internal/users/{id}` | Интерен — корисник по ID |
 | GET | `/internal/users/by-email/{email}` | Интерен — корисник по email |
 
@@ -183,7 +204,7 @@ API Gateway-от (Spring Cloud Gateway) е единствената влезна
 | GET | `/api/v1/reference/{type}` | Референтни податоци (car-brands, fuel-types, body-types, condition-types, transmission-types, cities) |
 | POST/DELETE | `/api/v1/admin/reference/car-brands` | CRUD за марки (админ) |
 | GET | `/api/v1/moderation/listings` | Огласи за одобрување |
-| POST | `/api/v1/moderation/listings/{id}/approve\|reject` | Одобрување/одбивање |
+| POST | `/api/v1/moderation/listings/{id}/approve` и `/reject` | Одобрување/одбивање |
 
 ### 4.3 Blog Service (порт 8083)
 
@@ -218,38 +239,75 @@ API Gateway-от (Spring Cloud Gateway) е единствената влезна
 
 ### 4.6 Notification Service (порт 8087)
 
-Нема REST контролери — работи event-driven преку RabbitMQ, испраќа email известувања преку SMTP (MailHog во dev).
+Нема REST контролери и **нема сопствена база** — работи чисто event-driven како Kafka consumer и испраќа email известувања преку SMTP (MailHog во dev, Resend во production).
 
 ---
 
 ## 5. База на податоци
 
-**PostgreSQL 16 Alpine** — единствена инстанца, заедничка база `automarket`. JPA/Hibernate ORM, HikariCP pool (3-5 конекции по сервис).
+**PostgreSQL 16 Alpine** — единствена инстанца, база `automarket`, но **шема по сервис**. Секој сервис има `search_path` и Hibernate `default_schema` поставени на својата шема, и сопствена Flyway history табела (`flyway_history_auth`, `flyway_history_listing`, …). JPA/Hibernate ORM, HikariCP pool (1–5 конекции по сервис).
 
-| Табела | Сервис | Опис |
+| Шема | Сервис | Табели |
 |---|---|---|
-| `users`, `roles`, `user_roles`, `refresh_tokens` | auth-service | Корисници, улоги (USER/MODERATOR/ADMIN), JWT refresh |
-| `listings`, `listing_images`, `favorites`, `listing_analytics` | listing-service | Огласи, слики, омилени, аналитика |
-| `car_brands`, `fuel_types`, `body_types`, `condition_types`, `transmission_types`, `cities` | listing-service | Референтни податоци |
-| `blogs` | blog-service | Блог објави |
-| `inquiries` | inquiry-service | Пораки купувач-продавач |
-| `subscriptions` | payment-service | Stripe претплати |
+| `auth` | auth-service | `users`, `roles`, `user_roles`, `refresh_tokens` |
+| `listing` | listing-service | `listings`, `listing_images`, `favorites`, `listing_analytics` + референтни: `car_brands`, `fuel_types`, `body_types`, `condition_types`, `transmission_types`, `cities` |
+| `blog` | blog-service | `blogs` |
+| `inquiry` | inquiry-service | `conversations`, `messages`, `inquiries` |
+| `payment` | payment-service | `subscriptions` |
+
+### Локални проекции (read models)
+
+Бидејќи сервисите не смеат да читаат туѓи табели, секој сервис на кој му требаат надворешни податоци држи **локална проекција** што се полни од Kafka настани:
+
+| Табела | Сервис | Проектира |
+|---|---|---|
+| `auth_city_view`, `auth_listing_view` | auth-service | градови и огласи од listing-service |
+| `listing_user_view` | listing-service | корисници од auth-service |
+| `blog_author_view` | blog-service | автори од auth-service |
+| `inquiry_user_view`, `inquiry_listing_view` | inquiry-service | корисници и огласи |
+| `payment_user_view` | payment-service | корисници |
+
+### Outbox / Inbox
+
+Секој сервис што објавува настани има и `outbox` и `processed_event` табели (модул `automarket-messaging`) — види поглавје 6.
 
 ---
 
-## 6. Event-Driven архитектура (RabbitMQ)
+## 6. Event-Driven архитектура (Apache Kafka)
 
-**Exchange:** `automarket.events` (topic, durable) | **Формат:** JSON
+**Kafka 3.7 во KRaft режим** (без ZooKeeper). Еден topic по агрегат, а конкретниот настан се носи во `eventType` полето на `EventEnvelope`-от. Пораките се клучирани по id на агрегатот, така што сите настани за еден ентитет паѓаат на иста партиција и редоследот е гарантиран.
 
-| Routing Key | Consumers |
+### Topics
+
+| Topic | Producer | Consumer групи |
+|---|---|---|
+| `automarket.user-events` | auth-service | listing-service, blog-service, inquiry-service, payment-service |
+| `automarket.listing-events` | listing-service | auth-service, inquiry-service, notification-service |
+| `automarket.inquiry-events` | inquiry-service | notification-service |
+| `automarket.subscription-events` | payment-service | auth-service |
+
+Секој topic има и `-dlt` (dead-letter) верзија; `DeadLetterMonitor` во notification-service ги следи сите четири.
+
+### Настани и реакции
+
+| Настан | Реакција |
 |---|---|
-| `user.registered` | notification-service → welcome email |
-| `user.disabled` | listing-service → деактивира огласи |
-| `user.deleted` | listing-service, inquiry-service, blog-service |
-| `user.plan-changed` | listing-service → ажурира лимити |
-| `listing.approved/rejected` | notification-service → email до продавач |
-| `inquiry.sent` | notification-service → email до продавач |
-| `subscription.activated/cancelled` | auth-service → ажурира план на корисник |
+| `user.registered` | listing-service, blog-service, inquiry-service, payment-service → полнат локална проекција на корисникот |
+| `user.plan-changed` | listing-service → ажурира лимити за огласи |
+| `user.deleted` | listing-service → чисти податоци на корисникот |
+| `listing.created` | auth-service, inquiry-service → проекција на огласот |
+| `listing.approved` / `listing.rejected` | notification-service → email до продавачот; auth-service, inquiry-service → ажурираат проекција |
+| `listing.deleted` | inquiry-service → ја отстранува проекцијата |
+| `inquiry.sent` | notification-service → email до продавачот |
+| `inquiry.replied` | notification-service → email до примачот |
+| `subscription.activated` / `subscription.cancelled` | auth-service → ажурира план на корисникот |
+
+### Гаранции за доставување
+
+- **Transactional outbox** (`OutboxRecorder` → `OutboxRelay`) — настанот се запишува во `outbox` табелата во **истата транзакција** како бизнис промената, а посебен relay го објавува на Kafka. Ако падне брокерот, настанот не се губи.
+- **Inbox / идемпотентност** (`InboxGuard` + `processed_event`) — секој обработен event id се памети, така што повторна достава (at-least-once) не предизвикува дупло email или дупла промена.
+- **Dead-letter topics** — пораки што повторено фрлаат грешка завршуваат во `-dlt` topic наместо да блокираат партицијата.
+- **Метрики** (`OutboxMetrics`) — изложени на Prometheus (заостанување на outbox, објавени/неуспешни настани).
 
 ---
 
@@ -266,19 +324,24 @@ API Gateway-от (Spring Cloud Gateway) е единствената влезна
 | Сервис | Меморија | Зависности |
 |---|---|---|
 | postgres | 256 MB | - |
+| db-schema-split (еднократен job) | - | postgres |
 | redis | 48 MB | - |
-| rabbitmq | 200 MB | - |
+| kafka | 1 GB | - |
+| minio (+ `minio-init` job) | 512 MB | - |
 | mailhog | 32 MB | - |
-| auth-service | 256 MB | postgres, redis, rabbitmq |
-| listing-service | 300 MB | postgres, redis, rabbitmq |
-| blog-service | 200 MB | postgres |
-| inquiry-service | 210 MB | postgres, rabbitmq |
-| payment-service | 220 MB | postgres, rabbitmq |
-| notification-service | 160 MB | rabbitmq, mailhog |
+| kafka-ui | 256 MB | kafka |
+| auth-service | 256 MB | postgres, db-schema-split, redis, kafka |
+| listing-service | 300 MB | postgres, redis, kafka, minio |
+| blog-service | 200 MB | postgres, kafka, minio |
+| inquiry-service | 210 MB | postgres, kafka |
+| payment-service | 220 MB | postgres, kafka |
+| notification-service | 160 MB | kafka, mailhog |
 | gateway | 220 MB | сите сервиси |
 | prometheus + grafana | 96+96 MB | monitoring профил |
 
-Сите сервиси користат `env_file: .env`, `healthcheck` + `depends_on: condition: service_healthy`. Мониторинг стекот се стартува со `docker compose --profile monitoring up`.
+Сите сервиси користат `env_file: .env`, `healthcheck` + `depends_on: condition: service_healthy`. Job-овите (`db-schema-split`, `minio-init`, `uploads-migrate`) се чекаат со `condition: service_completed_successfully`. Мониторинг стекот се стартува со `docker compose --profile monitoring up`.
+
+**Изложени портови:** Gateway :8080, Swagger UI :8080/swagger-ui.html, MailHog UI :8025, Kafka UI :8090, MinIO конзола :9001, PostgreSQL :5433 (на хост), Prometheus :9090, Grafana :3000.
 
 ---
 
@@ -286,11 +349,14 @@ API Gateway-от (Spring Cloud Gateway) е единствената влезна
 
 **Workflow:** [.github/workflows/ci.yml](https://github.com/Dkostoski30/automarket2-be/blob/feature/devops-setup/.github/workflows/ci.yml)
 
-При секој `push` на `master` или `feature/microservice-migration`:
-1. **Matrix strategy** — билда сите 7 сервиси **паралелно** на `ubuntu-latest`
-2. Најава на DockerHub (`secrets.DOCKERHUB_USERNAME/TOKEN`)
-3. `docker/build-push-action@v6` — билдање и push
-4. Два тага по image: `:latest` и `:<git-sha>` за traceability
+При секој `push` на `master` или `feature/devops-setup` и при секој pull request кон `master`:
+1. `actions/checkout@v4`
+2. **JDK 21** (Temurin) со Maven dependency кеширање
+3. `./mvnw -B package -DskipTests` — компилација на сите 12 модули
+4. `concurrency` група со `cancel-in-progress` — нов push го откажува претходниот run
+5. `paths-ignore` за `**/*.md` и `*.pdf` — промена во документација не троши CI минути
+
+**Моментална состојба:** pipeline-от е **build-only**. Извршувањето на тестовите и билдањето/push-ањето на Docker images кон registry е привремено исклучено додека тест-сетовите не се стабилизираат, така што CI паѓа само кога кодот навистина не се компилира. Images моментално се градат локално и се внесуваат во k3d кластерот преку `k3d image import` (`imagePullPolicy: Never`).
 
 ---
 
@@ -301,8 +367,8 @@ API Gateway-от (Spring Cloud Gateway) е единствената влезна
 ### Конфигурација
 
 - **Namespace:** `automarket`
-- **ConfigMap** (`automarket-config`): DB_URL, REDIS_HOST, RABBITMQ_HOST, сервисни URL-а, storage конфигурација
-- **Secret** (`automarket-secret`): DB_PASSWORD, JWT_SECRET, RABBITMQ_PASSWORD, Stripe клучеви
+- **ConfigMap** (`automarket-config`): `DB_URL`, `REDIS_HOST`, `KAFKA_BOOTSTRAP_SERVERS`, `JWT_PUBLIC_KEY`, `STORAGE_PROVIDER=s3`, `CDN_URL`, сервисни URL-а, mail конфигурација
+- **Secret** (`automarket-secret`): `DB_PASSWORD`, `JWT_PRIVATE_KEY`, `GATEWAY_SHARED_SECRET`, Stripe клучеви, `RESEND_API_KEY`; одделен `automarket-storage-secret` за MinIO креденцијали
 - Сервисите читаат преку `envFrom: [configMapRef, secretRef]`
 
 ### Инфраструктура
@@ -310,31 +376,44 @@ API Gateway-от (Spring Cloud Gateway) е единствената влезна
 | Компонента | Тип | Клучни детали |
 |---|---|---|
 | PostgreSQL 16 | StatefulSet | PVC 1Gi, shared_buffers=64MB, 128-256Mi RAM |
+| Kafka 3.7 | StatefulSet | KRaft (combined controller+broker), headless service |
+| MinIO | StatefulSet | PVC 2Gi, API :9000 / конзола :9001, init Job за bucket |
 | Redis 7 | Deployment | maxmemory 32mb, allkeys-lru, 24-48Mi RAM |
-| RabbitMQ 3 | Deployment | management plugin, 200-350Mi RAM |
 | MailHog | Deployment | dev SMTP :1025, UI :8025 |
-| Prometheus | Deployment | scrape на секои 10s, 7-дневна ретенција |
-| Grafana | Deployment | auto-provisioned Prometheus datasource |
+| Prometheus | Deployment | scrape на секои 10s, alerting rules преку ConfigMap |
+| Grafana | Deployment | auto-provisioned datasource + dashboards |
 
 ### Апликациски сервиси
 
-Сите 7 микросервиси следат ист шаблон: `imagePullPolicy: Never` (k3d import), `envFrom` за конфигурација, три типа проби:
+Сите 7 pod-а (6 сервиси + gateway) плус frontend следат ист шаблон: `imagePullPolicy: Never` (k3d import), `envFrom` за конфигурација, три типа проби:
 - **startupProbe** — макс. 5 мин. за JVM startup (30 × 10s)
 - **readinessProbe** — подготвеност за сообраќај
 - **livenessProbe** — рестартирање при неодговарање
 
-**PVC:** `uploads-pvc` (1Gi) — споделен меѓу listing-service и blog-service за слики.
+### Отпорност и скалирање
+
+- **HorizontalPodAutoscaler** — 8 HPA ресурси, `minReplicas: 1`, `maxReplicas: 3`, праг 75% CPU
+- **PodDisruptionBudget** — 8 PDB ресурси, задржуваат достапност при drain на node
+- **NetworkPolicy** — 6 политики; default-deny со explicit allow само за дозволените патеки (пр. само gateway смее кон сервисите, само сервисите кон PostgreSQL)
+
+### Складирање на слики
+
+Сликите веќе **не** се држат на споделен PVC — преминато е на **MinIO** (S3-компатибилен), преку `automarket-storage` апстракцијата, така што `local` ↔ `s3` е само промена на `STORAGE_PROVIDER`. Постои и миграционен Job (`k8s/migrations/migrate-uploads-job.yml`) што ја префрла старата содржина од `listing-uploads-pvc` / `blog-uploads-pvc` во MinIO.
 
 ### Ingress
 
 NGINX Ingress за `automarket.local`: `/api` и `/uploads` → Gateway :8080, `/` → Frontend :80.
 
+### GitOps (ArgoCD)
+
+`k8s/argocd/install.yml` го инсталира ArgoCD, а `k8s/argocd/application.yml` дефинира `Application` ресурс што ја следи `k8s/` папката во репозиториумот — декларативен continuous deployment наместо рачен `kubectl apply`.
+
 ### Deployment скрипта ([deploy.sh](https://github.com/Dkostoski30/automarket2-be/blob/feature/devops-setup/k8s/deploy.sh))
 
-1. k3d cluster create (порт 80+443, без Traefik)
-2. Docker build за сите сервиси + frontend
-3. k3d image import
-4. kubectl apply: namespace → configmap/secret → инфраструктура → сервиси → ingress
+1. `k3d cluster create` (порт 80+443, без Traefik) + инсталација на NGINX ingress controller
+2. Docker build за сите 7 сервиси + frontend
+3. `k3d image import`
+4. `kubectl apply`: namespace → configmap/secret → инфраструктура → migration job-ови → сервиси → ingress → autoscaling / PDB / NetworkPolicy
 5. Верификација: `kubectl wait` + `kubectl get pods`
 
 **Пристап:**
@@ -343,8 +422,9 @@ Frontend:    http://automarket.local
 API:         http://automarket.local/api/v1/reference/car-brands
 Prometheus:  kubectl port-forward svc/prometheus 9090:9090
 Grafana:     kubectl port-forward svc/grafana 3000:3000  (admin/admin)
+MinIO:       kubectl port-forward svc/minio 9001:9001
 ```
 
 Потребно: `127.0.0.1 automarket.local` во `C:\Windows\System32\drivers\etc\hosts`
 
-**Вкупно: 38+ Kubernetes ресурси** (1 Namespace, 4 ConfigMaps, 1 Secret, 1 StatefulSet, 12 Deployments, 15 Services, 2 PVCs, 1 Ingress)
+**Вкупно: 67 Kubernetes ресурси** — 1 Namespace, 6 ConfigMaps, 5 Secrets, 3 StatefulSets, 12 Deployments, 15 Services, 8 HPA, 8 PodDisruptionBudgets, 6 NetworkPolicies, 2 Jobs, 1 Ingress (плус ArgoCD `Application`).
